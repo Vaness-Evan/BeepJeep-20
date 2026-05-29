@@ -1,0 +1,21 @@
+[core]
+	repositoryformatversion = 0
+	filemode = true
+	bare = false
+	logallrefupdates = true
+[remote "gitsafe-backup"]
+	url = git://gitsafe:5418/backup.git
+	fetch = +refs/heads/*:refs/remotes/gitsafe-backup/*
+	skipFetchAll = true
+	lfsurl = http://gitsafe:5419
+[lfs "http://gitsafe:5419"]
+	locksverify = false
+[lfs "https://github.com/shinzennn/BeepJeep.git/info/lfs"]
+	access = basic
+[lfs "https://github.com/Vaness-Evan/BeepJeep-20.git/info/lfs"]
+	access = basic
+[remote "origin"]
+	url = https://github.com/Vaness-Evan/BeepJeep-20.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[http]
+	postBuffer = 524288000
