@@ -76,7 +76,8 @@ const MAP_HTML = `<!DOCTYPE html>
   }
 
   function updateDriver(d){
-    var lbl='<b>'+(d.driverName||'Driver')+'</b><br/>'+d.route+'<br/>Status: '+d.status+'<br/>Passengers: '+(d.passengerCount||0)+'<br/>Fare: \u20b1'+(d.totalFare||0);
+    var fleet=d.fleetName?('<br/><span style="color:#6B7280;font-size:11px;">Fleet: '+d.fleetName+'</span>'):'';
+    var lbl='<b>'+(d.driverName||'Driver')+'</b>'+fleet+'<br/>'+d.route+'<br/>Status: '+d.status+'<br/>Passengers: '+(d.passengerCount||0)+'<br/>Fare: \u20b1'+(d.totalFare||0);
     if(markers[d.driverId]){
       markers[d.driverId].setLatLng([d.lat,d.lng]);
       markers[d.driverId].setIcon(jIcon(d.status));
@@ -116,7 +117,7 @@ const MAP_HTML = `<!DOCTYPE html>
       else if(msg.type==='SET_DRIVERS') msg.drivers.forEach(updateDriver);
       else if(msg.type==='USER_LOCATION') setUserLoc(msg.lat,msg.lng,msg.panTo);
       else if(msg.type==='PAN_TO') map.setView([msg.lat,msg.lng],msg.zoom||15);
-      else if(msg.type==='SET_COMMUTERS') msg.commuters.forEach(updateCommuter);
+      else if(msg.type==='SET_COMMUTERS'){Object.keys(commuterMarkers).forEach(function(id){if(commuterMarkers[id]){map.removeLayer(commuterMarkers[id]);delete commuterMarkers[id];}});msg.commuters.forEach(updateCommuter);}
       else if(msg.type==='UPDATE_COMMUTER') updateCommuter(msg.data);
       else if(msg.type==='REMOVE_COMMUTER') removeCommuter(msg.commuterId);
     }catch(err){}

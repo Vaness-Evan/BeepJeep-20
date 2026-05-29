@@ -75,6 +75,7 @@ export default function DriverScreen() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [fleetName, setFleetName] = useState<string>("");
 
   const [showProfile, setShowProfile] = useState(false);
   const [profileTab, setProfileTab] = useState<ProfileTab>("profile");
@@ -93,8 +94,26 @@ export default function DriverScreen() {
   const totalEarnings = fares.reduce((s, f) => s + f.amount, 0);
 
   useEffect(() => {
-    if (!isFleetDriver) loadFareSettings();
-  }, [isFleetDriver]);
+    loadFareSettings();
+  }, []);
+
+  useEffect(() => {
+    if (!isFleetDriver || !user?.fleetId) return;
+    apiJson<{ fleetName: string | null }>("/driver/fleet")
+      .then((data) => setFleetName(data.fleetName ?? ""))
+      .catch(() => {});
+  }, [isFleetDriver, user?.fleetId]);
+
+  useEffect(() => {
+    if (!socket || !isFleetDriver || !user?.fleetId) return;
+    const handler = (data: { fleetId: number; regularFare: number; studentFare: number; seniorFare: number }) => {
+      if (data.fleetId === user.fleetId) {
+        setFareRates({ regularFare: data.regularFare, studentFare: data.studentFare, seniorFare: data.seniorFare });
+      }
+    };
+    socket.on("fleet:fare_updated", handler);
+    return () => { socket.off("fleet:fare_updated", handler); };
+  }, [socket, isFleetDriver, user?.fleetId]);
 
   useEffect(() => {
     if (mapReady) mapRef.current?.setCommuterLocations(commuterLocations);
@@ -159,9 +178,10 @@ export default function DriverScreen() {
         passengerCount: pCount,
         totalFare: fareTotal,
         lastUpdated: Date.now(),
+        fleetName: fleetName || undefined,
       });
     },
-    [socket, user],
+    [socket, user, fleetName],
   );
 
   const startTracking = useCallback(async () => {

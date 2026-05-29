@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, fareSettingsTable, usersTable, fleetsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { authMiddleware, requireRole, type AuthRequest } from "../middlewares/auth";
+import { getIo } from "../socket";
 
 const router = Router();
 router.use(authMiddleware);
@@ -121,6 +122,12 @@ router.put("/fare-settings", requireRole("independent_driver", "admin"), async (
         seniorFare: String(seniorFare),
       });
     }
+    getIo()?.emit("fleet:fare_updated", {
+      fleetId: Number(fleetId),
+      regularFare,
+      studentFare,
+      seniorFare,
+    });
     return res.json({ regularFare, studentFare, seniorFare });
   }
 

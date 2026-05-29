@@ -16,6 +16,7 @@ export interface DriverData {
   passengerCount: number;
   totalFare: number;
   lastUpdated: number;
+  fleetName?: string;
 }
 
 export interface FareRecord {

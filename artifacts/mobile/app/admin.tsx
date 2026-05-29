@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
-  Platform, TextInput, ActivityIndicator, Modal, Alert, Linking, Animated,
+  Platform, TextInput, ActivityIndicator, Modal, Alert, Animated,
 } from "react-native";
+import * as WebBrowser from "expo-web-browser";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
@@ -277,8 +278,12 @@ export default function AdminScreen() {
     }
     setExporting(format);
     try {
-      const url = `${API_BASE}/reports/export?format=${format}&token=${token}&days=30`;
-      await Linking.openURL(url);
+      const url = `${API_BASE}/reports/export?format=${format}&token=${encodeURIComponent(token)}&days=30`;
+      if (Platform.OS === "web") {
+        (window as any).open(url, "_blank");
+      } else {
+        await WebBrowser.openBrowserAsync(url);
+      }
     } catch (e: any) {
       Alert.alert("Export failed", e.message);
     } finally {

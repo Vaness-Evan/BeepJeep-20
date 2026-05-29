@@ -12,6 +12,7 @@ interface DriverData {
   passengerCount: number;
   totalFare: number;
   lastUpdated: number;
+  fleetName?: string;
 }
 
 interface CommuterLocation {
@@ -26,6 +27,9 @@ const activeDrivers = new Map<string, DriverData>();
 const activeCommuters = new Map<string, CommuterLocation>();
 const commuterTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
+let _io: Server | null = null;
+export function getIo() { return _io; }
+
 function clearCommuterTimeout(commuterId: string) {
   const t = commuterTimeouts.get(commuterId);
   if (t) {
@@ -39,6 +43,7 @@ export function initSocket(httpServer: HttpServer) {
     path: "/api/socket.io",
     cors: { origin: "*", methods: ["GET", "POST"] },
   });
+  _io = io;
 
   io.on("connection", (socket) => {
     logger.info({ socketId: socket.id }, "Client connected");

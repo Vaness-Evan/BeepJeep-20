@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, fareRecordsTable, ratingsTable } from "@workspace/db";
+import { db, fareRecordsTable, ratingsTable, fleetsTable } from "@workspace/db";
 import { eq, gte, and, desc } from "drizzle-orm";
 import { authMiddleware, requireRole, type AuthRequest } from "../middlewares/auth";
 
@@ -64,6 +64,20 @@ router.get("/driver/stats", requireRole("independent_driver"), async (req: AuthR
       })),
     },
   });
+});
+
+router.get("/driver/fleet", requireRole("fleet_driver"), async (req: AuthRequest, res) => {
+  const user = req.user!;
+  if (!user.fleetId) {
+    res.json({ fleetName: null });
+    return;
+  }
+  const [fleet] = await db
+    .select({ name: fleetsTable.name })
+    .from(fleetsTable)
+    .where(eq(fleetsTable.id, user.fleetId))
+    .limit(1);
+  res.json({ fleetName: fleet?.name ?? null });
 });
 
 export default router;
