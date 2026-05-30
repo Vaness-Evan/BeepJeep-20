@@ -12,6 +12,7 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import { useSocket } from "@/context/SocketContext";
 import MapWebView, { MapWebViewRef } from "@/components/MapWebView";
+import MobileRouteBuilder, { Waypoint } from "@/components/MobileRouteBuilder";
 import { apiJson, API_BASE } from "@/lib/api";
 
 type AdminTab = "map" | "fleet" | "reports";
@@ -54,11 +55,18 @@ interface FareRates {
   seniorFare: number;
 }
 
+interface FleetRoute {
+  fleetId: number;
+  name: string;
+  waypoints: Waypoint[];
+  routeCoords: Waypoint[];
+}
+
 export default function AdminScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, logout, token } = useAuth();
-  const { drivers, connected } = useSocket();
+  const { drivers, connected, routeUpdates, removedFleetIds } = useSocket();
   const mapRef = useRef<MapWebViewRef>(null);
   const [mapReady, setMapReady] = useState(false);
   const [tab, setTab] = useState<AdminTab>("map");
@@ -94,6 +102,11 @@ export default function AdminScreen() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
 
+  const [fleetRoutes, setFleetRoutes] = useState<Record<number, FleetRoute>>({});
+  const [showRouteBuilder, setShowRouteBuilder] = useState(false);
+  const [routeBuilderFleetId, setRouteBuilderFleetId] = useState<number | null>(null);
+  const [routeBuilderSaving, setRouteBuilderSaving] = useState(false);
+
   const topPad = Platform.OS === "web" ? 0 : insets.top;
   const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
 
@@ -105,6 +118,30 @@ export default function AdminScreen() {
   useEffect(() => {
     if (mapReady) mapRef.current?.setDrivers(fleetOnlyDrivers);
   }, [mapReady, fleetOnlyDrivers]);
+
+  useEffect(() => {
+    if (mapReady) {
+      const routes = Object.values(fleetRoutes);
+      if (routes.length > 0) mapRef.current?.setAllRoutes(routes);
+    }
+  }, [mapReady, fleetRoutes]);
+
+  // Real-time route updates from socket
+  useEffect(() => {
+    if (!mapReady) return;
+    routeUpdates.forEach((r) => {
+      setFleetRoutes((prev) => ({ ...prev, [r.fleetId]: r as FleetRoute }));
+      mapRef.current?.setFleetRoute(r as FleetRoute);
+    });
+  }, [routeUpdates, mapReady]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    removedFleetIds.forEach((id) => {
+      setFleetRoutes((prev) => { const n = { ...prev }; delete n[id]; return n; });
+      mapRef.current?.removeFleetRoute(id);
+    });
+  }, [removedFleetIds, mapReady]);
 
   // Always load fleet driver IDs on mount so the map tab can filter correctly
   useEffect(() => {
@@ -120,7 +157,7 @@ export default function AdminScreen() {
     try {
       const data = await apiJson<Fleet[]>("/fleets");
       setFleets(data);
-      // Load all fleet driver IDs for map filtering
+      // Load all fleet driver IDs for map filtering + load routes
       const allIds = new Set<number>();
       await Promise.all(
         data.map(async (fleet) => {
@@ -128,6 +165,12 @@ export default function AdminScreen() {
             const driversData = await apiJson<FleetDriver[]>(`/fleets/${fleet.id}/drivers`);
             driversData.forEach((d) => allIds.add(d.id));
             setFleetDrivers((prev) => ({ ...prev, [fleet.id]: driversData }));
+          } catch {}
+          try {
+            const routeData = await apiJson<FleetRoute>(`/routes/fleet/${fleet.id}`);
+            if (routeData?.waypoints?.length) {
+              setFleetRoutes((prev) => ({ ...prev, [fleet.id]: routeData }));
+            }
           } catch {}
         })
       );
@@ -137,6 +180,36 @@ export default function AdminScreen() {
     } finally {
       setFleetsLoading(false);
     }
+  }
+
+  function openRouteBuilder(fleetId: number) {
+    setRouteBuilderFleetId(fleetId);
+    setShowRouteBuilder(true);
+    Haptics.selectionAsync();
+  }
+
+  async function handleRouteSave(name: string, waypoints: Waypoint[], routeCoords: Waypoint[]) {
+    if (!routeBuilderFleetId) return;
+    setRouteBuilderSaving(true);
+    try {
+      const saved = await apiJson<FleetRoute>(`/routes/fleet/${routeBuilderFleetId}`, {
+        method: "PUT",
+        body: JSON.stringify({ name, waypoints, routeCoords }),
+      });
+      setFleetRoutes((prev) => ({ ...prev, [routeBuilderFleetId]: saved }));
+      mapRef.current?.setFleetRoute(saved);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowRouteBuilder(false);
+      Alert.alert("Route saved!", "Drivers and commuters can now see this route.");
+    } catch (e: any) {
+      Alert.alert("Error saving route", e.message ?? "Please try again.");
+    } finally {
+      setRouteBuilderSaving(false);
+    }
+  }
+
+  function handleRouteCancel() {
+    setShowRouteBuilder(false);
   }
 
   async function loadFleetDrivers(fleetId: number) {
@@ -427,6 +500,12 @@ export default function AdminScreen() {
                     <MaterialCommunityIcons name="cash-edit" size={16} color={colors.primary} />
                     <Text style={s.fareSettingsBtnText}>Fares</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity style={[s.fareSettingsBtn, { backgroundColor: fleetRoutes[fleet.id] ? "#fff7ed" : "#f3f4f6", borderColor: fleetRoutes[fleet.id] ? colors.primary : "#e5e7eb", borderWidth: 1 }]} onPress={() => openRouteBuilder(fleet.id)}>
+                    <MaterialCommunityIcons name="map-marker-path" size={16} color={fleetRoutes[fleet.id] ? colors.primary : colors.mutedForeground} />
+                    <Text style={[s.fareSettingsBtnText, { color: fleetRoutes[fleet.id] ? colors.primary : colors.mutedForeground }]}>
+                      {fleetRoutes[fleet.id] ? "Route" : "Add Route"}
+                    </Text>
+                  </TouchableOpacity>
                   <Feather name={expandedFleet === fleet.id ? "chevron-up" : "chevron-down"} size={18} color={colors.mutedForeground} />
                 </TouchableOpacity>
 
@@ -704,6 +783,63 @@ export default function AdminScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ROUTE BUILDER MODAL */}
+      <Modal
+        visible={showRouteBuilder}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={handleRouteCancel}
+      >
+        <View style={{ flex: 1, backgroundColor: "#fff" }}>
+          {/* Header */}
+          <View style={[s.routeBuilderHeader, { paddingTop: topPad > 0 ? topPad : 12 }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.routeBuilderTitle}>
+                {routeBuilderFleetId && fleetRoutes[routeBuilderFleetId] ? "Edit Route" : "Add Route"}
+              </Text>
+              {routeBuilderFleetId && (
+                <Text style={s.routeBuilderSubtitle}>
+                  {fleets.find((f) => f.id === routeBuilderFleetId)?.name ?? ""}
+                </Text>
+              )}
+            </View>
+            <TouchableOpacity style={s.routeBuilderClose} onPress={handleRouteCancel}>
+              <Feather name="x" size={22} color={colors.foreground} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Route builder saving overlay */}
+          {routeBuilderSaving && (
+            <View style={s.routeBuilderSavingOverlay}>
+              <ActivityIndicator color={colors.primary} size="large" />
+              <Text style={s.routeBuilderSavingText}>Saving route…</Text>
+            </View>
+          )}
+
+          {/* Hint row */}
+          <View style={s.routeBuilderHint}>
+            <MaterialCommunityIcons name="map-marker-path" size={14} color={colors.primary} />
+            <Text style={s.routeBuilderHintText}>
+              {routeBuilderFleetId && fleetRoutes[routeBuilderFleetId]
+                ? "Route saved — tap the map to move pins or add new ones"
+                : "Search a place or tap the map to place pins • OSRM road-snapping enabled"}
+            </Text>
+          </View>
+
+          {/* Map route builder */}
+          {showRouteBuilder && routeBuilderFleetId !== null && (
+            <MobileRouteBuilder
+              fleetName={fleets.find((f) => f.id === routeBuilderFleetId)?.name ?? "Fleet"}
+              initialName={fleetRoutes[routeBuilderFleetId]?.name}
+              initialWaypoints={fleetRoutes[routeBuilderFleetId]?.waypoints}
+              initialRouteCoords={fleetRoutes[routeBuilderFleetId]?.routeCoords}
+              onSave={handleRouteSave}
+              onCancel={handleRouteCancel}
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -849,5 +985,25 @@ function makeStyles(c: ReturnType<typeof useColors>) {
       padding: 12, color: c.foreground, fontSize: 16, fontWeight: "700",
       backgroundColor: c.background,
     },
+    routeBuilderHeader: {
+      flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+      paddingHorizontal: 20, paddingVertical: 14,
+      borderBottomWidth: 1, borderBottomColor: c.border, backgroundColor: "#fff",
+    },
+    routeBuilderTitle: { fontSize: 17, fontWeight: "800", color: c.foreground },
+    routeBuilderSubtitle: { fontSize: 12, color: c.mutedForeground, marginTop: 1 },
+    routeBuilderClose: { padding: 8, borderRadius: 20, backgroundColor: c.secondary },
+    routeBuilderHint: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      paddingHorizontal: 16, paddingVertical: 8,
+      backgroundColor: "#fff7ed", borderBottomWidth: 1, borderBottomColor: "#fed7aa",
+    },
+    routeBuilderHintText: { flex: 1, fontSize: 12, color: "#92400e", fontWeight: "500" },
+    routeBuilderSavingOverlay: {
+      position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+      backgroundColor: "rgba(255,255,255,0.85)", zIndex: 99,
+      alignItems: "center", justifyContent: "center", gap: 12,
+    },
+    routeBuilderSavingText: { fontSize: 15, fontWeight: "700", color: c.foreground },
   });
 }
