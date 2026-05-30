@@ -39,7 +39,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const domain = process.env.EXPO_PUBLIC_DOMAIN;
-    const url = domain ? `https://${domain}` : "http://localhost:5000";
+    const url = domain ? `https://${domain}` : "http://localhost:8080";
 
     const socket = io(url, {
       path: "/api/socket.io",
