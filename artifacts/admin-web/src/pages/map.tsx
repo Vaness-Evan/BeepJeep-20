@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useGetFleets, useGetFleetDrivers } from "@workspace/api-client-react";
+import { useQueries } from "@tanstack/react-query";
+import { useGetFleets, getFleetDrivers, getGetFleetDriversQueryKey } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Wifi, WifiOff, Bus, Users, Navigation } from "lucide-react";
@@ -56,6 +57,26 @@ function makeIcon(status: DriverData["status"]) {
   });
 }
 
+function buildPopup(driver: DriverData): string {
+  const statusLabel =
+    driver.status === "available"
+      ? "Available"
+      : driver.status === "full"
+      ? "Full"
+      : "Offline";
+  return `
+    <div style="font-family:system-ui,sans-serif;min-width:180px;">
+      <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${driver.driverName}</div>
+      ${driver.route ? `<div style="font-size:12px;color:#64748b;margin-bottom:6px;">Route: ${driver.route}</div>` : ""}
+      ${driver.fleetName ? `<div style="font-size:12px;color:#64748b;margin-bottom:6px;">Fleet: ${driver.fleetName}</div>` : ""}
+      <div style="display:flex;gap:12px;font-size:12px;margin-top:4px;">
+        <span><b>${driver.passengerCount}</b> passengers</span>
+        <span><b>₱${driver.totalFare.toFixed(2)}</b> today</span>
+      </div>
+      <div style="margin-top:6px;font-size:11px;font-weight:600;color:${STATUS_COLOR[driver.status] ?? STATUS_COLOR.offline};">${statusLabel}</div>
+    </div>`;
+}
+
 // Philippines default center (Manila area)
 const DEFAULT_CENTER: [number, number] = [14.5995, 120.9842];
 const DEFAULT_ZOOM = 13;
@@ -68,44 +89,43 @@ export default function MapPage() {
 
   const [connected, setConnected] = useState(false);
   const [drivers, setDrivers] = useState<Map<string, DriverData>>(new Map());
-  const [fleetDriverIds, setFleetDriverIds] = useState<Set<string>>(new Set());
+  // null = still loading; Set = loaded (may be empty if no fleets)
+  const [fleetDriverIds, setFleetDriverIds] = useState<Set<string> | null>(null);
 
-  // Load all fleets to collect fleet driver IDs
-  const { data: fleets } = useGetFleets();
+  // Load all fleets
+  const { data: fleets, isSuccess: fleetsLoaded } = useGetFleets();
 
-  // Collect driver IDs across all fleets
-  const allFleetIds = fleets?.map((f) => f.id) ?? [];
+  // Dynamically fetch drivers for every fleet using useQueries
+  const fleetIds = fleetsLoaded && fleets ? fleets.map((f) => f.id) : [];
 
-  // We fetch drivers for each fleet using a consolidated approach
-  const { data: fleet0Drivers } = useGetFleetDrivers(allFleetIds[0]!, {
-    query: { enabled: !!allFleetIds[0] },
-  });
-  const { data: fleet1Drivers } = useGetFleetDrivers(allFleetIds[1]!, {
-    query: { enabled: !!allFleetIds[1] },
-  });
-  const { data: fleet2Drivers } = useGetFleetDrivers(allFleetIds[2]!, {
-    query: { enabled: !!allFleetIds[2] },
-  });
-  const { data: fleet3Drivers } = useGetFleetDrivers(allFleetIds[3]!, {
-    query: { enabled: !!allFleetIds[3] },
-  });
-  const { data: fleet4Drivers } = useGetFleetDrivers(allFleetIds[4]!, {
-    query: { enabled: !!allFleetIds[4] },
+  const fleetDriverQueries = useQueries({
+    queries: fleetIds.map((fleetId) => ({
+      queryKey: getGetFleetDriversQueryKey(fleetId),
+      queryFn: () => getFleetDrivers(fleetId),
+    })),
   });
 
+  // Build the allowed set once all fleet driver queries have settled
   useEffect(() => {
-    const allDrivers = [
-      ...(fleet0Drivers ?? []),
-      ...(fleet1Drivers ?? []),
-      ...(fleet2Drivers ?? []),
-      ...(fleet3Drivers ?? []),
-      ...(fleet4Drivers ?? []),
-    ];
-    const ids = new Set(allDrivers.map((d) => String(d.id)));
-    setFleetDriverIds(ids);
-  }, [fleet0Drivers, fleet1Drivers, fleet2Drivers, fleet3Drivers, fleet4Drivers]);
+    if (!fleetsLoaded) return;
+    if (fleetIds.length === 0) {
+      // Admin has no fleets → show nothing
+      setFleetDriverIds(new Set());
+      return;
+    }
+    const allSettled = fleetDriverQueries.every((q) => q.isSuccess || q.isError);
+    if (!allSettled) return;
 
-  // Initialize Leaflet map
+    const ids = new Set<string>();
+    fleetDriverQueries.forEach((q) => {
+      if (q.isSuccess && q.data) {
+        q.data.forEach((d) => ids.add(String(d.id)));
+      }
+    });
+    setFleetDriverIds(ids);
+  }, [fleetsLoaded, fleetIds.length, fleetDriverQueries]);
+
+  // Initialize Leaflet map once
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
@@ -128,25 +148,25 @@ export default function MapPage() {
     };
   }, []);
 
-  // Update markers on the map when drivers or fleet filter changes
+  // Update map markers whenever driver data or the allowed-ID set changes
   const updateMarkers = useCallback(
-    (driversMap: Map<string, DriverData>, filterIds: Set<string>) => {
+    (driversMap: Map<string, DriverData>, filterIds: Set<string> | null) => {
       const map = mapRef.current;
       if (!map) return;
+      // Don't render anything until we know which IDs are allowed
+      if (filterIds === null) return;
 
       const visibleIds = new Set<string>();
 
       driversMap.forEach((driver, id) => {
-        if (filterIds.size > 0 && !filterIds.has(id)) return;
+        if (!filterIds.has(id)) return;
         visibleIds.add(id);
 
         const existing = markersRef.current.get(id);
         if (existing) {
           existing.setLatLng([driver.lat, driver.lng]);
           existing.setIcon(makeIcon(driver.status));
-          existing
-            .getPopup()
-            ?.setContent(buildPopup(driver));
+          existing.getPopup()?.setContent(buildPopup(driver));
         } else {
           const marker = L.marker([driver.lat, driver.lng], {
             icon: makeIcon(driver.status),
@@ -186,7 +206,6 @@ export default function MapPage() {
       setConnected(true);
       socket.emit("get:drivers");
     });
-
     socket.on("disconnect", () => setConnected(false));
 
     socket.on("drivers:all", (data: DriverData[]) => {
@@ -211,19 +230,22 @@ export default function MapPage() {
       });
     });
 
-    socket.on("driver:fare", (data: { driverId: string; passengerCount: number; totalFare: number }) => {
-      setDrivers((prev) => {
-        const driver = prev.get(data.driverId);
-        if (!driver) return prev;
-        const next = new Map(prev);
-        next.set(data.driverId, {
-          ...driver,
-          passengerCount: data.passengerCount,
-          totalFare: data.totalFare,
+    socket.on(
+      "driver:fare",
+      (data: { driverId: string; passengerCount: number; totalFare: number }) => {
+        setDrivers((prev) => {
+          const driver = prev.get(data.driverId);
+          if (!driver) return prev;
+          const next = new Map(prev);
+          next.set(data.driverId, {
+            ...driver,
+            passengerCount: data.passengerCount,
+            totalFare: data.totalFare,
+          });
+          return next;
         });
-        return next;
-      });
-    });
+      }
+    );
 
     socket.on("driver:offline", (data: { driverId: string }) => {
       setDrivers((prev) => {
@@ -238,13 +260,16 @@ export default function MapPage() {
     };
   }, []);
 
-  // Derived stats for fleet-only drivers
-  const visibleDrivers = Array.from(drivers.values()).filter(
-    (d) => fleetDriverIds.size === 0 || fleetDriverIds.has(d.driverId)
-  );
+  // Derived stats — only for this admin's fleet drivers; null while IDs are loading
+  const visibleDrivers =
+    fleetDriverIds !== null
+      ? Array.from(drivers.values()).filter((d) => fleetDriverIds.has(d.driverId))
+      : [];
+
   const activeCount = visibleDrivers.length;
   const fullCount = visibleDrivers.filter((d) => d.status === "full").length;
   const totalPassengers = visibleDrivers.reduce((s, d) => s + d.passengerCount, 0);
+  const idsLoaded = fleetDriverIds !== null;
 
   return (
     <div>
@@ -257,7 +282,10 @@ export default function MapPage() {
         </div>
         <div className="flex items-center gap-2">
           {connected ? (
-            <Badge variant="outline" className="text-emerald-600 border-emerald-200 bg-emerald-50 gap-1.5">
+            <Badge
+              variant="outline"
+              className="text-emerald-600 border-emerald-200 bg-emerald-50 gap-1.5"
+            >
               <Wifi className="h-3 w-3" />
               Live
             </Badge>
@@ -279,7 +307,9 @@ export default function MapPage() {
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Active</div>
-              <div className="text-lg font-extrabold" data-testid="stat-active-drivers">{activeCount}</div>
+              <div className="text-lg font-extrabold" data-testid="stat-active-drivers">
+                {idsLoaded ? activeCount : "—"}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -290,7 +320,9 @@ export default function MapPage() {
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Full</div>
-              <div className="text-lg font-extrabold" data-testid="stat-full-drivers">{fullCount}</div>
+              <div className="text-lg font-extrabold" data-testid="stat-full-drivers">
+                {idsLoaded ? fullCount : "—"}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -301,7 +333,9 @@ export default function MapPage() {
             </div>
             <div>
               <div className="text-xs text-muted-foreground">Riders</div>
-              <div className="text-lg font-extrabold" data-testid="stat-total-riders">{totalPassengers}</div>
+              <div className="text-lg font-extrabold" data-testid="stat-total-riders">
+                {idsLoaded ? totalPassengers : "—"}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -329,27 +363,11 @@ export default function MapPage() {
         data-testid="map-container"
       />
 
-      {activeCount === 0 && connected && (
+      {idsLoaded && activeCount === 0 && connected && (
         <p className="text-center text-sm text-muted-foreground mt-4">
           No active drivers from your fleets are online right now.
         </p>
       )}
     </div>
   );
-}
-
-function buildPopup(driver: DriverData): string {
-  const statusLabel =
-    driver.status === "available" ? "Available" : driver.status === "full" ? "Full" : "Offline";
-  return `
-    <div style="font-family:system-ui,sans-serif;min-width:180px;">
-      <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${driver.driverName}</div>
-      ${driver.route ? `<div style="font-size:12px;color:#64748b;margin-bottom:6px;">Route: ${driver.route}</div>` : ""}
-      ${driver.fleetName ? `<div style="font-size:12px;color:#64748b;margin-bottom:6px;">Fleet: ${driver.fleetName}</div>` : ""}
-      <div style="display:flex;gap:12px;font-size:12px;margin-top:4px;">
-        <span><b>${driver.passengerCount}</b> passengers</span>
-        <span><b>₱${driver.totalFare.toFixed(2)}</b> today</span>
-      </div>
-      <div style="margin-top:6px;font-size:11px;font-weight:600;color:${STATUS_COLOR[driver.status]};">${statusLabel}</div>
-    </div>`;
 }

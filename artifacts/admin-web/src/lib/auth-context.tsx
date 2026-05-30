@@ -1,10 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { setBaseUrl, setAuthTokenGetter, getMe, login as apiLogin } from "@workspace/api-client-react";
+import { setAuthTokenGetter, getMe, login as apiLogin } from "@workspace/api-client-react";
 import type { AuthUser, LoginInput } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
-
-setBaseUrl("/api");
 
 interface AuthContextType {
   user: AuthUser | null;
