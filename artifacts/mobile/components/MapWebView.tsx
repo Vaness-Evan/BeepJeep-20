@@ -10,6 +10,11 @@ export interface CommuterLocation {
   lng: number;
 }
 
+export interface RouteCoord {
+  lat: number;
+  lng: number;
+}
+
 export interface MapWebViewRef {
   updateDriver: (data: DriverData) => void;
   removeDriver: (driverId: string) => void;
@@ -19,6 +24,9 @@ export interface MapWebViewRef {
   setCommuterLocations: (commuters: CommuterLocation[]) => void;
   updateCommuterLocation: (commuter: CommuterLocation) => void;
   removeCommuter: (commuterId: string) => void;
+  setFleetRoute: (fleetId: number, coords: RouteCoord[], name: string) => void;
+  removeFleetRoute: (fleetId: number) => void;
+  setAllRoutes: (routes: { fleetId: number; coords: RouteCoord[]; name: string }[]) => void;
 }
 
 interface Props {
@@ -52,6 +60,7 @@ const MAP_HTML = `<!DOCTYPE html>
   var commuterMarkers={};
   var userMarker=null;
   var userCircle=null;
+  var routePolylines={};
 
   function jIcon(status){
     var c=status==='available'?'#F97316':status==='full'?'#EF4444':'#9CA3AF';
@@ -109,6 +118,19 @@ const MAP_HTML = `<!DOCTYPE html>
     if(pan) map.setView([lat,lng],16);
   }
 
+  function setFleetRoute(fleetId, coords, name){
+    if(routePolylines[fleetId]){ map.removeLayer(routePolylines[fleetId]); delete routePolylines[fleetId]; }
+    if(!coords||coords.length<2) return;
+    var latlngs=coords.map(function(c){return[c.lat,c.lng];});
+    routePolylines[fleetId]=L.polyline(latlngs,{
+      color:'#f97316',weight:5,opacity:0.8,lineJoin:'round',lineCap:'round'
+    }).addTo(map).bindPopup('<b>'+name+'</b>');
+  }
+
+  function removeFleetRoute(fleetId){
+    if(routePolylines[fleetId]){ map.removeLayer(routePolylines[fleetId]); delete routePolylines[fleetId]; }
+  }
+
   function handleMsg(e){
     try{
       var msg=JSON.parse(typeof e.data==='string'?e.data:JSON.stringify(e.data));
@@ -120,6 +142,12 @@ const MAP_HTML = `<!DOCTYPE html>
       else if(msg.type==='SET_COMMUTERS'){Object.keys(commuterMarkers).forEach(function(id){if(commuterMarkers[id]){map.removeLayer(commuterMarkers[id]);delete commuterMarkers[id];}});msg.commuters.forEach(updateCommuter);}
       else if(msg.type==='UPDATE_COMMUTER') updateCommuter(msg.data);
       else if(msg.type==='REMOVE_COMMUTER') removeCommuter(msg.commuterId);
+      else if(msg.type==='SET_FLEET_ROUTE') setFleetRoute(msg.fleetId,msg.coords,msg.name);
+      else if(msg.type==='REMOVE_FLEET_ROUTE') removeFleetRoute(msg.fleetId);
+      else if(msg.type==='SET_ALL_ROUTES'){
+        Object.keys(routePolylines).forEach(function(id){if(routePolylines[id]){map.removeLayer(routePolylines[id]);delete routePolylines[id];}});
+        msg.routes.forEach(function(r){setFleetRoute(r.fleetId,r.coords,r.name);});
+      }
     }catch(err){}
   }
 
@@ -168,6 +196,15 @@ const MapWebView = forwardRef<MapWebViewRef, Props>(({ style, onMapReady }, ref)
     },
     removeCommuter(commuterId: string) {
       inject(`handleMsg({data:JSON.stringify({type:'REMOVE_COMMUTER',commuterId:'${commuterId}'})})`);
+    },
+    setFleetRoute(fleetId: number, coords: RouteCoord[], name: string) {
+      inject(`handleMsg({data:JSON.stringify({type:'SET_FLEET_ROUTE',fleetId:${fleetId},coords:${JSON.stringify(coords)},name:${JSON.stringify(name)}})})`);
+    },
+    removeFleetRoute(fleetId: number) {
+      inject(`handleMsg({data:JSON.stringify({type:'REMOVE_FLEET_ROUTE',fleetId:${fleetId}})})`);
+    },
+    setAllRoutes(routes: { fleetId: number; coords: RouteCoord[]; name: string }[]) {
+      inject(`handleMsg({data:JSON.stringify({type:'SET_ALL_ROUTES',routes:${JSON.stringify(routes)}})})`);
     },
   }));
 

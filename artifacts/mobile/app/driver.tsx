@@ -24,6 +24,12 @@ import MapWebView, { MapWebViewRef } from "@/components/MapWebView";
 import { apiJson } from "@/lib/api";
 import { FARE_RATES } from "@/types";
 
+interface FleetRouteData {
+  fleetId: number;
+  name: string;
+  routeCoords: { lat: number; lng: number }[];
+}
+
 type CapacityStatus = "available" | "full";
 type ProfileTab = "profile" | "history" | "ratings";
 
@@ -62,7 +68,7 @@ export default function DriverScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
-  const { socket, connected, commuterLocations } = useSocket();
+  const { socket, connected, commuterLocations, routeUpdates, removedFleetIds } = useSocket();
   const mapRef = useRef<MapWebViewRef>(null);
 
   const isFleetDriver = user?.role === "fleet_driver";
@@ -118,6 +124,32 @@ export default function DriverScreen() {
   useEffect(() => {
     if (mapReady) mapRef.current?.setCommuterLocations(commuterLocations);
   }, [commuterLocations, mapReady]);
+
+  useEffect(() => {
+    if (!mapReady || !isFleetDriver || !user?.fleetId) return;
+    apiJson<FleetRouteData | null>(`/routes/fleet/${user.fleetId}`)
+      .then((route) => {
+        if (route && route.routeCoords.length > 0) {
+          mapRef.current?.setFleetRoute(route.fleetId, route.routeCoords, route.name);
+        }
+      })
+      .catch(() => {});
+  }, [mapReady, isFleetDriver, user?.fleetId]);
+
+  useEffect(() => {
+    if (!mapReady || !isFleetDriver || !user?.fleetId) return;
+    const update = routeUpdates.find((r) => r.fleetId === user.fleetId);
+    if (update) {
+      mapRef.current?.setFleetRoute(update.fleetId, update.routeCoords, update.name);
+    }
+  }, [routeUpdates, mapReady, isFleetDriver, user?.fleetId]);
+
+  useEffect(() => {
+    if (!mapReady || !isFleetDriver || !user?.fleetId) return;
+    if (removedFleetIds.includes(user.fleetId)) {
+      mapRef.current?.removeFleetRoute(user.fleetId);
+    }
+  }, [removedFleetIds, mapReady, isFleetDriver, user?.fleetId]);
 
   useEffect(() => {
     if (tracking) {

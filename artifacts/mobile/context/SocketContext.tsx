@@ -17,11 +17,19 @@ export interface CommuterLocation {
   announcedAt: number;
 }
 
+export interface RouteUpdate {
+  fleetId: number;
+  name: string;
+  routeCoords: { lat: number; lng: number }[];
+}
+
 interface SocketContextType {
   socket: Socket | null;
   connected: boolean;
   drivers: DriverData[];
   commuterLocations: CommuterLocation[];
+  routeUpdates: RouteUpdate[];
+  removedFleetIds: number[];
 }
 
 const SocketContext = createContext<SocketContextType>({
@@ -29,6 +37,8 @@ const SocketContext = createContext<SocketContextType>({
   connected: false,
   drivers: [],
   commuterLocations: [],
+  routeUpdates: [],
+  removedFleetIds: [],
 });
 
 export function SocketProvider({ children }: { children: ReactNode }) {
@@ -36,6 +46,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false);
   const [drivers, setDrivers] = useState<DriverData[]>([]);
   const [commuterLocations, setCommuterLocations] = useState<CommuterLocation[]>([]);
+  const [routeUpdates, setRouteUpdates] = useState<RouteUpdate[]>([]);
+  const [removedFleetIds, setRemovedFleetIds] = useState<number[]>([]);
 
   useEffect(() => {
     const domain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -111,13 +123,38 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setCommuterLocations((prev) => prev.filter((c) => c.commuterId !== data.commuterId));
     });
 
+    socket.on("route:updated", (data: RouteUpdate) => {
+      setRouteUpdates((prev) => {
+        const idx = prev.findIndex((r) => r.fleetId === data.fleetId);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = data;
+          return next;
+        }
+        return [...prev, data];
+      });
+      setRemovedFleetIds((prev) => prev.filter((id) => id !== data.fleetId));
+    });
+
+    socket.on("route:removed", (data: { fleetId: number }) => {
+      setRouteUpdates((prev) => prev.filter((r) => r.fleetId !== data.fleetId));
+      setRemovedFleetIds((prev) => [...prev, data.fleetId]);
+    });
+
     return () => {
       socket.disconnect();
     };
   }, []);
 
   return (
-    <SocketContext.Provider value={{ socket: socketRef.current, connected, drivers, commuterLocations }}>
+    <SocketContext.Provider value={{
+      socket: socketRef.current,
+      connected,
+      drivers,
+      commuterLocations,
+      routeUpdates,
+      removedFleetIds,
+    }}>
       {children}
     </SocketContext.Provider>
   );

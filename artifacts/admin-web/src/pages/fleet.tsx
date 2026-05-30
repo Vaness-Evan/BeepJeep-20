@@ -10,7 +10,7 @@ import {
   getGetFleetDriversQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +34,30 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronDown, ChevronRight, Plus, Trash2, UserPlus, Bus, Building2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, UserPlus, Bus, Building2, Map } from "lucide-react";
+import RouteBuilder from "@/components/RouteBuilder";
+import { useQuery } from "@tanstack/react-query";
+
+interface FleetRoute {
+  id: number;
+  fleetId: number;
+  name: string;
+  waypoints: { lat: number; lng: number }[];
+  routeCoords: { lat: number; lng: number }[];
+  updatedAt: string;
+}
+
+function useFleetRoute(fleetId: number, enabled: boolean) {
+  return useQuery<FleetRoute | null>({
+    queryKey: ["fleet-route", fleetId],
+    queryFn: async () => {
+      const res = await fetch(`/api/routes/fleet/${fleetId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled,
+  });
+}
 
 function FleetDriverRow({ fleetId, driver }: { fleetId: number; driver: { id: number; name: string; username: string; vehicleNumber?: string | null; route?: string | null } }) {
   const { toast } = useToast();
@@ -96,6 +119,7 @@ function FleetDriverRow({ fleetId, driver }: { fleetId: number; driver: { id: nu
 function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: number; createdAt: string } }) {
   const [expanded, setExpanded] = useState(false);
   const [showAddDriver, setShowAddDriver] = useState(false);
+  const [showRouteBuilder, setShowRouteBuilder] = useState(false);
   const [driverForm, setDriverForm] = useState({ name: "", username: "", password: "", vehicleNumber: "", route: "" });
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -103,6 +127,8 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
   const { data: drivers, isLoading: driversLoading } = useGetFleetDrivers(fleet.id, {
     query: { enabled: expanded, queryKey: getGetFleetDriversQueryKey(fleet.id) },
   });
+
+  const { data: fleetRoute, refetch: refetchRoute } = useFleetRoute(fleet.id, true);
 
   const addDriver = useAddFleetDriver({
     mutation: {
@@ -139,9 +165,22 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
         </div>
         <div className="flex-1">
           <div className="font-semibold text-foreground">{fleet.name}</div>
-          <div className="text-xs text-muted-foreground">{fleet.driverCount} driver{fleet.driverCount !== 1 ? "s" : ""}</div>
+          <div className="text-xs text-muted-foreground">
+            {fleet.driverCount} driver{fleet.driverCount !== 1 ? "s" : ""}
+            {fleetRoute ? ` · Route: ${fleetRoute.name}` : ""}
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-xs gap-1 text-orange-600 border-orange-200 hover:bg-orange-50"
+            onClick={(e) => { e.stopPropagation(); setShowRouteBuilder(true); }}
+            data-testid={`button-route-builder-${fleet.id}`}
+          >
+            <Map className="h-3 w-3" />
+            {fleetRoute ? "Route" : "Add Route"}
+          </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -201,6 +240,26 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
         </CardContent>
       )}
 
+      {/* Route Builder Dialog */}
+      <Dialog open={showRouteBuilder} onOpenChange={setShowRouteBuilder}>
+        <DialogContent className="max-w-3xl w-full">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Map className="h-5 w-5 text-orange-500" />
+              Route Builder — {fleet.name}
+            </DialogTitle>
+          </DialogHeader>
+          <RouteBuilder
+            fleetId={fleet.id}
+            fleetName={fleet.name}
+            existingRoute={fleetRoute}
+            onSaved={() => { refetchRoute(); }}
+            onDeleted={() => { refetchRoute(); }}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Driver Dialog */}
       <Dialog open={showAddDriver} onOpenChange={setShowAddDriver}>
         <DialogContent>
           <DialogHeader>
@@ -262,7 +321,7 @@ export default function FleetPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight">Fleet & Drivers</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage your fleets and their assigned drivers.</p>
+          <p className="text-sm text-muted-foreground mt-1">Manage your fleets, drivers, and jeepney routes.</p>
         </div>
         <Button onClick={() => setShowCreate(true)} data-testid="button-create-fleet">
           <Plus className="h-4 w-4 mr-1.5" />
