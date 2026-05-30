@@ -41,7 +41,7 @@ router.post("/ratings", requireRole("commuter"), async (req: AuthRequest, res) =
 });
 
 router.get("/ratings/driver/:id", requireRole("admin"), async (req: AuthRequest, res) => {
-  const driverId = parseInt(req.params["id"] ?? "");
+  const driverId = parseInt(String(req.params["id"] ?? ""));
   if (isNaN(driverId)) {
     res.status(400).json({ error: "Invalid driver id" });
     return;

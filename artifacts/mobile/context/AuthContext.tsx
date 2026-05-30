@@ -16,6 +16,7 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   fleetId: number | null;
+  route?: string | null;
 }
 
 interface AuthContextType {

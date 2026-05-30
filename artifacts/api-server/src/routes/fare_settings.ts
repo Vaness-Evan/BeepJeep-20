@@ -131,7 +131,7 @@ router.put("/fare-settings", requireRole("independent_driver", "admin"), async (
     return res.json({ regularFare, studentFare, seniorFare });
   }
 
-  res.status(400).json({ error: "Invalid request" });
+  return res.status(400).json({ error: "Invalid request" });
 });
 
 export default router;

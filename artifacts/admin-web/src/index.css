@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -68,51 +68,59 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  /* Bold, structured light mode with a vibrant deep industrial blue (220 90% 40%) */
-  --background: 210 20% 98%; /* Very light grey-blue */
-  --foreground: 222 47% 11%;
-  
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 214 32% 91%;
-  
+  /* Orange-first design matching the mobile app */
+  --background: 0 0% 100%;
+  --foreground: 240 2% 12%;
+
+  --card: 0 0% 97.6%;
+  --card-foreground: 240 2% 12%;
+  --card-border: 220 13% 91%;
+
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 214 32% 91%;
-  
-  --primary: 220 90% 40%;
+  --popover-foreground: 240 2% 12%;
+  --popover-border: 220 13% 91%;
+
+  /* Primary: #F97316 → HSL 24 95% 53% */
+  --primary: 24 95% 53%;
   --primary-foreground: 0 0% 100%;
-  
-  --secondary: 217 24% 90%;
-  --secondary-foreground: 222 47% 11%;
-  
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  
-  --accent: 210 40% 96%;
-  --accent-foreground: 222 47% 11%;
-  
+
+  /* Secondary: #FFF7ED → HSL 33 100% 97% */
+  --secondary: 33 100% 97%;
+  --secondary-foreground: 17 88% 37%;
+
+  /* Muted: #F5F5F5 */
+  --muted: 0 0% 96%;
+  --muted-foreground: 240 2% 57%;
+
+  /* Accent: #FEF3C7 */
+  --accent: 48 100% 88%;
+  --accent-foreground: 30 90% 32%;
+
+  /* Destructive: #EF4444 */
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
-  
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 220 90% 40%;
 
+  /* Border/Input: #E5E7EB */
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 24 95% 53%;
+
+  /* Sidebar matches primary orange */
   --sidebar: 0 0% 100%;
-  --sidebar-foreground: 222 47% 11%;
-  --sidebar-border: 214 32% 91%;
-  --sidebar-primary: 220 90% 40%;
+  --sidebar-foreground: 240 2% 12%;
+  --sidebar-border: 220 13% 91%;
+  --sidebar-primary: 24 95% 53%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 210 40% 96%;
-  --sidebar-accent-foreground: 222 47% 11%;
-  --sidebar-ring: 220 90% 40%;
+  --sidebar-accent: 33 100% 97%;
+  --sidebar-accent-foreground: 240 2% 12%;
+  --sidebar-ring: 24 95% 53%;
 
-  --app-font-sans: 'Plus Jakarta Sans', sans-serif;
+  --app-font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --app-font-serif: Georgia, serif;
-  --app-font-mono: 'Space Mono', monospace;
-  --radius: 0.25rem;
-  
+  --app-font-mono: 'Courier New', monospace;
+  /* Radius: 12px = 0.75rem (matches mobile radius: 12) */
+  --radius: 0.75rem;
+
   --shadow-2xs: 0px 1px 0px 0px rgba(0,0,0,0.05);
   --shadow-xs: 0px 1px 2px 0px rgba(0,0,0,0.05);
   --shadow-sm: 0px 1px 2px 0px rgba(0,0,0,0.05), 0px 1px 3px -1px rgba(0,0,0,0.1);
@@ -121,7 +129,7 @@
   --shadow-lg: 0px 10px 15px -3px rgba(0,0,0,0.1), 0px 4px 6px -4px rgba(0,0,0,0.1);
   --shadow-xl: 0px 20px 25px -5px rgba(0,0,0,0.1), 0px 8px 10px -6px rgba(0,0,0,0.1);
   --shadow-2xl: 0px 25px 50px -12px rgba(0,0,0,0.25);
-  
+
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
@@ -141,44 +149,44 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
-  
-  --card: 222 47% 11%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 217 33% 17%;
-  
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
-  --popover-border: 217 33% 17%;
-  
-  --primary: 220 90% 50%;
-  --primary-foreground: 0 0% 100%;
-  
-  --secondary: 217 33% 17%;
-  --secondary-foreground: 210 40% 98%;
-  
-  --muted: 217 33% 17%;
-  --muted-foreground: 215 20% 65%;
-  
-  --accent: 217 33% 17%;
-  --accent-foreground: 210 40% 98%;
-  
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 210 40% 98%;
-  
-  --border: 217 33% 17%;
-  --input: 217 33% 17%;
-  --ring: 220 90% 50%;
+  --background: 24 10% 10%;
+  --foreground: 33 20% 96%;
 
-  --sidebar: 222 47% 11%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 217 33% 17%;
-  --sidebar-primary: 220 90% 50%;
+  --card: 24 8% 13%;
+  --card-foreground: 33 20% 96%;
+  --card-border: 24 8% 20%;
+
+  --popover: 24 8% 13%;
+  --popover-foreground: 33 20% 96%;
+  --popover-border: 24 8% 20%;
+
+  --primary: 24 95% 58%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 24 8% 18%;
+  --secondary-foreground: 33 20% 96%;
+
+  --muted: 24 8% 18%;
+  --muted-foreground: 33 10% 60%;
+
+  --accent: 24 8% 18%;
+  --accent-foreground: 33 20% 96%;
+
+  --destructive: 0 62% 40%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 24 8% 20%;
+  --input: 24 8% 20%;
+  --ring: 24 95% 58%;
+
+  --sidebar: 24 10% 10%;
+  --sidebar-foreground: 33 20% 96%;
+  --sidebar-border: 24 8% 20%;
+  --sidebar-primary: 24 95% 58%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 33% 17%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 220 90% 50%;
+  --sidebar-accent: 24 8% 18%;
+  --sidebar-accent-foreground: 33 20% 96%;
+  --sidebar-ring: 24 95% 58%;
 }
 
 @layer base {

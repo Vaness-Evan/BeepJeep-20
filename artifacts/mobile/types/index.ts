@@ -1,9 +1,12 @@
-export type UserRole = "admin" | "driver" | "commuter";
+export type UserRole = "admin" | "fleet_driver" | "independent_driver" | "commuter";
 
 export interface AuthUser {
-  id: string;
+  id: number;
+  username: string;
   name: string;
   role: UserRole;
+  fleetId: number | null;
+  route?: string | null;
 }
 
 export interface DriverData {

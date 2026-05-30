@@ -44,7 +44,7 @@ router.get("/fleets", requireRole("admin"), async (req: AuthRequest, res) => {
 
 // Get drivers in a fleet
 router.get("/fleets/:id/drivers", requireRole("admin"), async (req: AuthRequest, res) => {
-  const fleetId = parseInt(req.params["id"] ?? "");
+  const fleetId = parseInt(String(req.params["id"] ?? ""));
   if (isNaN(fleetId)) { res.status(400).json({ error: "Invalid fleet id" }); return; }
 
   const fleet = await db.select().from(fleetsTable).where(
@@ -62,7 +62,7 @@ router.get("/fleets/:id/drivers", requireRole("admin"), async (req: AuthRequest,
 
 // Add driver to fleet
 router.post("/fleets/:id/drivers", requireRole("admin"), async (req: AuthRequest, res) => {
-  const fleetId = parseInt(req.params["id"] ?? "");
+  const fleetId = parseInt(String(req.params["id"] ?? ""));
   if (isNaN(fleetId)) { res.status(400).json({ error: "Invalid fleet id" }); return; }
 
   const fleet = await db.select().from(fleetsTable).where(
@@ -90,8 +90,8 @@ router.post("/fleets/:id/drivers", requireRole("admin"), async (req: AuthRequest
 
 // Remove driver from fleet
 router.delete("/fleets/:id/drivers/:driverId", requireRole("admin"), async (req: AuthRequest, res) => {
-  const fleetId = parseInt(req.params["id"] ?? "");
-  const driverId = parseInt(req.params["driverId"] ?? "");
+  const fleetId = parseInt(String(req.params["id"] ?? ""));
+  const driverId = parseInt(String(req.params["driverId"] ?? ""));
   if (isNaN(fleetId) || isNaN(driverId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   await db.delete(usersTable).where(
@@ -102,7 +102,7 @@ router.delete("/fleets/:id/drivers/:driverId", requireRole("admin"), async (req:
 
 // Delete fleet
 router.delete("/fleets/:id", requireRole("admin"), async (req: AuthRequest, res) => {
-  const fleetId = parseInt(req.params["id"] ?? "");
+  const fleetId = parseInt(String(req.params["id"] ?? ""));
   if (isNaN(fleetId)) { res.status(400).json({ error: "Invalid fleet id" }); return; }
   await db.delete(fleetsTable).where(and(eq(fleetsTable.id, fleetId), eq(fleetsTable.adminId, req.user!.id)));
   res.json({ success: true });
