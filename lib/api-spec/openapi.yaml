@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
   description: API specification
@@ -10,13 +9,22 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: fleets
+    description: Fleet management
+  - name: fare-settings
+    description: Fare settings
+  - name: ratings
+    description: Driver ratings
+  - name: reports
+    description: Reports and export
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +32,232 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+
+  /fleets:
+    get:
+      operationId: getFleets
+      tags: [fleets]
+      summary: List admin fleets
+      responses:
+        "200":
+          description: List of fleets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Fleet"
+    post:
+      operationId: createFleet
+      tags: [fleets]
+      summary: Create a fleet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FleetInput"
+      responses:
+        "201":
+          description: Created fleet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Fleet"
+
+  /fleets/{fleetId}:
+    delete:
+      operationId: deleteFleet
+      tags: [fleets]
+      summary: Delete a fleet
+      parameters:
+        - name: fleetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /fleets/{fleetId}/drivers:
+    get:
+      operationId: getFleetDrivers
+      tags: [fleets]
+      summary: Get drivers in a fleet
+      parameters:
+        - name: fleetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Fleet drivers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FleetDriver"
+    post:
+      operationId: addFleetDriver
+      tags: [fleets]
+      summary: Add a driver to a fleet
+      parameters:
+        - name: fleetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FleetDriverInput"
+      responses:
+        "201":
+          description: Created driver
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetDriver"
+
+  /fleets/{fleetId}/drivers/{driverId}:
+    delete:
+      operationId: removeFleetDriver
+      tags: [fleets]
+      summary: Remove a driver from fleet
+      parameters:
+        - name: fleetId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: driverId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /fare-settings:
+    get:
+      operationId: getFareSettings
+      tags: [fare-settings]
+      summary: Get fare settings for a fleet
+      parameters:
+        - name: fleetId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Fare settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FareSettings"
+    put:
+      operationId: updateFareSettings
+      tags: [fare-settings]
+      summary: Update fare settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FareSettingsInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FareSettings"
+
+  /ratings/driver/{driverId}:
+    get:
+      operationId: getDriverRatings
+      tags: [ratings]
+      summary: Get ratings for a driver
+      parameters:
+        - name: driverId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Driver ratings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DriverRatingsResponse"
+
+  /reports/summary:
+    get:
+      operationId: getReportsSummary
+      tags: [reports]
+      summary: Get fleet summary for today
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportsSummary"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +268,181 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    LoginInput:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    AuthUser:
+      type: object
+      required: [id, username, name, role]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        fleetId:
+          type: ["integer", "null"]
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/AuthUser"
+
+    MeResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: "#/components/schemas/AuthUser"
+
+    Fleet:
+      type: object
+      required: [id, name, driverCount, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        driverCount:
+          type: integer
+        createdAt:
+          type: string
+
+    FleetInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    FleetDriver:
+      type: object
+      required: [id, name, username]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        username:
+          type: string
+        vehicleNumber:
+          type: ["string", "null"]
+        route:
+          type: ["string", "null"]
+
+    FleetDriverInput:
+      type: object
+      required: [name, username, password]
+      properties:
+        name:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        vehicleNumber:
+          type: string
+        route:
+          type: string
+
+    FareSettings:
+      type: object
+      required: [regularFare, studentFare, seniorFare]
+      properties:
+        regularFare:
+          type: number
+        studentFare:
+          type: number
+        seniorFare:
+          type: number
+
+    FareSettingsInput:
+      type: object
+      required: [regularFare, studentFare, seniorFare]
+      properties:
+        regularFare:
+          type: number
+        studentFare:
+          type: number
+        seniorFare:
+          type: number
+        fleetId:
+          type: ["integer", "null"]
+
+    DriverRating:
+      type: object
+      required: [id, commuterName, rating, createdAt]
+      properties:
+        id:
+          type: integer
+        commuterName:
+          type: string
+        rating:
+          type: integer
+        comment:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    DriverRatingsResponse:
+      type: object
+      required: [ratings, average, count]
+      properties:
+        ratings:
+          type: array
+          items:
+            $ref: "#/components/schemas/DriverRating"
+        average:
+          type: number
+        count:
+          type: integer
+
+    ReportsSummary:
+      type: object
+      required: [totalFareToday, totalPassengersToday, regularCount, studentCount, seniorCount, totalDrivers, totalFleetDrivers, totalFleets]
+      properties:
+        totalFareToday:
+          type: number
+        totalPassengersToday:
+          type: integer
+        regularCount:
+          type: integer
+        studentCount:
+          type: integer
+        seniorCount:
+          type: integer
+        totalDrivers:
+          type: integer
+        totalFleetDrivers:
+          type: integer
+        totalFleets:
+          type: integer
