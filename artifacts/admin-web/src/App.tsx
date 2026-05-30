@@ -10,6 +10,7 @@ import FleetPage from "@/pages/fleet";
 import FaresPage from "@/pages/fares";
 import ReportsPage from "@/pages/reports";
 import RatingsPage from "@/pages/ratings";
+import MapPage from "@/pages/map";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 
@@ -68,6 +69,9 @@ function AppRouter() {
       </Route>
       <Route path="/ratings">
         <ProtectedRoute component={RatingsPage} />
+      </Route>
+      <Route path="/map">
+        <ProtectedRoute component={MapPage} />
       </Route>
       <Route path="/">
         {user ? <Redirect to="/dashboard" /> : <Redirect to="/login" />}

@@ -1,7 +1,7 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
-import { LayoutDashboard, Users, CreditCard, BarChart3, Star, LogOut, Loader2 } from "lucide-react";
+import { LayoutDashboard, Users, CreditCard, BarChart3, Star, LogOut, Loader2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
@@ -27,6 +27,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/map", label: "Live Map", icon: MapPin },
     { href: "/fleet", label: "Fleet & Drivers", icon: Users },
     { href: "/fares", label: "Fare Settings", icon: CreditCard },
     { href: "/reports", label: "Reports & Export", icon: BarChart3 },
