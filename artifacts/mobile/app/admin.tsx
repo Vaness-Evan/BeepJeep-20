@@ -122,7 +122,11 @@ export default function AdminScreen() {
   useEffect(() => {
     if (mapReady) {
       const routes = Object.values(fleetRoutes);
-      if (routes.length > 0) mapRef.current?.setAllRoutes(routes);
+      if (routes.length > 0) {
+        mapRef.current?.setAllRoutes(
+          routes.map((r) => ({ fleetId: r.fleetId, coords: r.routeCoords, name: r.name }))
+        );
+      }
     }
   }, [mapReady, fleetRoutes]);
 
@@ -130,8 +134,11 @@ export default function AdminScreen() {
   useEffect(() => {
     if (!mapReady) return;
     routeUpdates.forEach((r) => {
-      setFleetRoutes((prev) => ({ ...prev, [r.fleetId]: r as FleetRoute }));
-      mapRef.current?.setFleetRoute(r as FleetRoute);
+      setFleetRoutes((prev) => ({
+        ...prev,
+        [r.fleetId]: { fleetId: r.fleetId, name: r.name, waypoints: [], routeCoords: r.routeCoords },
+      }));
+      mapRef.current?.setFleetRoute(r.fleetId, r.routeCoords, r.name);
     });
   }, [routeUpdates, mapReady]);
 
@@ -197,7 +204,7 @@ export default function AdminScreen() {
         body: JSON.stringify({ name, waypoints, routeCoords }),
       });
       setFleetRoutes((prev) => ({ ...prev, [routeBuilderFleetId]: saved }));
-      mapRef.current?.setFleetRoute(saved);
+      mapRef.current?.setFleetRoute(saved.fleetId, saved.routeCoords, saved.name);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowRouteBuilder(false);
       Alert.alert("Route saved!", "Drivers and commuters can now see this route.");
