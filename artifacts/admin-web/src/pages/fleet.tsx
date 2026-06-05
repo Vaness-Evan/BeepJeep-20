@@ -93,11 +93,7 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
 function useFleetRoutes(fleetId: number) {
   return useQueryGeneric<FleetRoute[]>({
     queryKey: ["fleet-routes", fleetId],
-    queryFn: async () => {
-      const res = await fetch(`/api/routes/fleet/${fleetId}`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
+    queryFn: () => apiFetch(`/api/routes/fleet/${fleetId}`),
   });
 }
 
