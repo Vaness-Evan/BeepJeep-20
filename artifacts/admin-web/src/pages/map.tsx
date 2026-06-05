@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { io, Socket } from "socket.io-client";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useQueries } from "@tanstack/react-query";
-import { useGetFleets, getFleetDrivers, getGetFleetDriversQueryKey } from "@workspace/api-client-react";
+import { useGetFleets } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Wifi, WifiOff, Bus, Users, Navigation } from "lucide-react";
@@ -19,6 +18,7 @@ interface DriverData {
   totalFare: number;
   lastUpdated: number;
   fleetName?: string;
+  fleetId?: number | null;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -89,41 +89,16 @@ export default function MapPage() {
 
   const [connected, setConnected] = useState(false);
   const [drivers, setDrivers] = useState<Map<string, DriverData>>(new Map());
-  // null = still loading; Set = loaded (may be empty if no fleets)
-  const [fleetDriverIds, setFleetDriverIds] = useState<Set<string> | null>(null);
 
-  // Load all fleets
-  const { data: fleets, isSuccess: fleetsLoaded } = useGetFleets();
+  // Load all fleets so we know which fleetIds belong to this admin
+  const { data: fleets } = useGetFleets();
 
-  // Dynamically fetch drivers for every fleet using useQueries
-  const fleetIds = fleetsLoaded && fleets ? fleets.map((f) => f.id) : [];
-
-  const fleetDriverQueries = useQueries({
-    queries: fleetIds.map((fleetId) => ({
-      queryKey: getGetFleetDriversQueryKey(fleetId),
-      queryFn: () => getFleetDrivers(fleetId),
-    })),
-  });
-
-  // Build the allowed set once all fleet driver queries have settled
-  useEffect(() => {
-    if (!fleetsLoaded) return;
-    if (fleetIds.length === 0) {
-      // Admin has no fleets → show nothing
-      setFleetDriverIds(new Set());
-      return;
-    }
-    const allSettled = fleetDriverQueries.every((q) => q.isSuccess || q.isError);
-    if (!allSettled) return;
-
-    const ids = new Set<string>();
-    fleetDriverQueries.forEach((q) => {
-      if (q.isSuccess && q.data) {
-        q.data.forEach((d) => ids.add(String(d.id)));
-      }
-    });
-    setFleetDriverIds(ids);
-  }, [fleetsLoaded, fleetIds.length, fleetDriverQueries]);
+  // Build a stable set of fleet IDs from the admin's fleets
+  const adminFleetIds = useMemo<Set<number>>(
+    () => new Set((fleets ?? []).map((f) => f.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fleets?.map((f) => f.id).join(",")]
+  );
 
   // Initialize Leaflet map once
   useEffect(() => {
@@ -148,18 +123,17 @@ export default function MapPage() {
     };
   }, []);
 
-  // Update map markers whenever driver data or the allowed-ID set changes
+  // Update map markers whenever driver data or fleet filter changes
   const updateMarkers = useCallback(
-    (driversMap: Map<string, DriverData>, filterIds: Set<string> | null) => {
+    (driversMap: Map<string, DriverData>, fleetIds: Set<number>) => {
       const map = mapRef.current;
       if (!map) return;
-      // Don't render anything until we know which IDs are allowed
-      if (filterIds === null) return;
 
       const visibleIds = new Set<string>();
 
       driversMap.forEach((driver, id) => {
-        if (!filterIds.has(id)) return;
+        // Show driver if they belong to one of this admin's fleets
+        if (driver.fleetId == null || !fleetIds.has(driver.fleetId)) return;
         visibleIds.add(id);
 
         const existing = markersRef.current.get(id);
@@ -189,8 +163,8 @@ export default function MapPage() {
   );
 
   useEffect(() => {
-    updateMarkers(drivers, fleetDriverIds);
-  }, [drivers, fleetDriverIds, updateMarkers]);
+    updateMarkers(drivers, adminFleetIds);
+  }, [drivers, adminFleetIds, updateMarkers]);
 
   // Socket.io connection
   useEffect(() => {
@@ -260,16 +234,18 @@ export default function MapPage() {
     };
   }, []);
 
-  // Derived stats — only for this admin's fleet drivers; null while IDs are loading
-  const visibleDrivers =
-    fleetDriverIds !== null
-      ? Array.from(drivers.values()).filter((d) => fleetDriverIds.has(d.driverId))
-      : [];
+  // Derived stats — only drivers from this admin's fleets
+  const visibleDrivers = useMemo(
+    () =>
+      Array.from(drivers.values()).filter(
+        (d) => d.fleetId != null && adminFleetIds.has(d.fleetId)
+      ),
+    [drivers, adminFleetIds]
+  );
 
   const activeCount = visibleDrivers.length;
   const fullCount = visibleDrivers.filter((d) => d.status === "full").length;
   const totalPassengers = visibleDrivers.reduce((s, d) => s + d.passengerCount, 0);
-  const idsLoaded = fleetDriverIds !== null;
 
   return (
     <div>
@@ -308,7 +284,7 @@ export default function MapPage() {
             <div>
               <div className="text-xs text-muted-foreground">Active</div>
               <div className="text-lg font-extrabold" data-testid="stat-active-drivers">
-                {idsLoaded ? activeCount : "—"}
+                {activeCount}
               </div>
             </div>
           </CardContent>
@@ -321,7 +297,7 @@ export default function MapPage() {
             <div>
               <div className="text-xs text-muted-foreground">Full</div>
               <div className="text-lg font-extrabold" data-testid="stat-full-drivers">
-                {idsLoaded ? fullCount : "—"}
+                {fullCount}
               </div>
             </div>
           </CardContent>
@@ -334,7 +310,7 @@ export default function MapPage() {
             <div>
               <div className="text-xs text-muted-foreground">Riders</div>
               <div className="text-lg font-extrabold" data-testid="stat-total-riders">
-                {idsLoaded ? totalPassengers : "—"}
+                {totalPassengers}
               </div>
             </div>
           </CardContent>
@@ -363,7 +339,7 @@ export default function MapPage() {
         data-testid="map-container"
       />
 
-      {idsLoaded && activeCount === 0 && connected && (
+      {activeCount === 0 && connected && (
         <p className="text-center text-sm text-muted-foreground mt-4">
           No active drivers from your fleets are online right now.
         </p>
