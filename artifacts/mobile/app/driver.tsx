@@ -193,11 +193,30 @@ export default function DriverScreen() {
     finally { setStatsLoading(false); }
   }
 
-  function recenterMap() {
+  async function recenterMap() {
     if (coords) {
       mapRef.current?.setUserLocation(coords, true);
       Haptics.selectionAsync();
+      return;
     }
+    // No cached coords yet — get a one-shot fix
+    try {
+      if (Platform.OS !== "web") {
+        const { granted } = await Location.requestForegroundPermissionsAsync();
+        if (!granted) return;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const c = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        setCoords(c);
+        mapRef.current?.setUserLocation(c, true);
+      } else if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+          const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setCoords(c);
+          mapRef.current?.setUserLocation(c, true);
+        });
+      }
+    } catch {}
+    Haptics.selectionAsync();
   }
 
   function openProfile() {
@@ -459,11 +478,9 @@ export default function DriverScreen() {
         <TouchableOpacity style={s.mapExpandBtn} onPress={toggleMap} activeOpacity={0.8}>
           <Feather name={mapExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.primary} />
         </TouchableOpacity>
-        {coords && (
-          <TouchableOpacity style={s.recenterBtn} onPress={recenterMap} activeOpacity={0.8}>
-            <Feather name="crosshair" size={16} color={colors.primary} />
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={s.recenterBtn} onPress={recenterMap} activeOpacity={0.8}>
+          <Feather name="crosshair" size={16} color={colors.primary} />
+        </TouchableOpacity>
       </Animated.View>
 
       {/* Map legend */}

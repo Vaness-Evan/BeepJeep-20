@@ -86,14 +86,23 @@ export default function CommuterScreen() {
   useEffect(() => {
     startLocationWatch();
     return () => {
-      // Clean up location watch
       stopLocationWatch();
-      // If sharing, remove commuter marker from all driver maps
       if (socket && user) {
         socket.emit("commuter:remove", { commuterId: String(user.id) });
       }
     };
   }, []);
+
+  // Directly remove driver from map the moment they go offline —
+  // bypasses the React state chain so the icon disappears immediately.
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: { driverId: string }) => {
+      mapRef.current?.removeDriver(data.driverId);
+    };
+    socket.on("driver:offline", handler);
+    return () => { socket.off("driver:offline", handler); };
+  }, [socket]);
 
   useEffect(() => {
     if (!userCoords) return;
