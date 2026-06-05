@@ -351,8 +351,13 @@ const MapWebView = forwardRef<MapWebViewRef, Props>(({ style, onMapReady }, ref)
     if (Platform.OS === "web") {
       iframeRef.current?.contentWindow?.postMessage(JSON.stringify(msg), "*");
     } else {
-      const json = JSON.stringify(JSON.stringify(msg));
-      webViewRef.current?.injectJavaScript(`handleMsg({data:${json}});true;`);
+      // handleMsg lives inside the IIFE so it's not global.
+      // Dispatch a real MessageEvent so window.addEventListener('message') catches it.
+      const json = JSON.stringify(msg);
+      const escaped = JSON.stringify(json);
+      webViewRef.current?.injectJavaScript(
+        `window.dispatchEvent(new MessageEvent('message',{data:${escaped}}));true;`
+      );
     }
   }, []);
 
