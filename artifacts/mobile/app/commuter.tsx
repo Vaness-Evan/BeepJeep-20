@@ -52,6 +52,7 @@ export default function CommuterScreen() {
   const alertAnim = useRef(new Animated.Value(0)).current;
   const panelHeight = useRef(new Animated.Value(160)).current;
   const locationSub = useRef<any>(null);
+  const firstFix = useRef(true);
 
   useEffect(() => {
     if (mapReady) {
@@ -126,25 +127,24 @@ export default function CommuterScreen() {
   }
 
   const startLocationWatch = useCallback(async () => {
+    firstFix.current = true;
+    const handleFix = (coords: { lat: number; lng: number }) => {
+      setUserCoords(coords);
+      const panTo = firstFix.current;
+      firstFix.current = false;
+      mapRef.current?.setUserLocation(coords, panTo);
+    };
     if (Platform.OS !== "web") {
       const { granted } = await Location.requestForegroundPermissionsAsync();
       if (!granted) return;
       locationSub.current = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 },
-        (loc) => {
-          const coords = { lat: loc.coords.latitude, lng: loc.coords.longitude };
-          setUserCoords(coords);
-          mapRef.current?.setUserLocation(coords);
-        },
+        (loc) => handleFix({ lat: loc.coords.latitude, lng: loc.coords.longitude }),
       );
     } else {
       if (!navigator.geolocation) return;
       const id = navigator.geolocation.watchPosition(
-        (pos) => {
-          const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setUserCoords(coords);
-          mapRef.current?.setUserLocation(coords);
-        },
+        (pos) => handleFix({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         undefined,
         { enableHighAccuracy: true },
       );
@@ -180,6 +180,7 @@ export default function CommuterScreen() {
       lng: userCoords.lng,
       announcedAt: Date.now(),
     });
+    mapRef.current?.setUserLocation(userCoords, true);
     setIsSharing(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }

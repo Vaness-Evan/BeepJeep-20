@@ -94,6 +94,7 @@ export default function DriverScreen() {
   const [statsLoading, setStatsLoading] = useState(false);
 
   const locationSub = useRef<any>(null);
+  const firstFix = useRef(true);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const mapHeight = useRef(new Animated.Value(200)).current;
 
@@ -218,6 +219,20 @@ export default function DriverScreen() {
   );
 
   const startTracking = useCallback(async () => {
+    firstFix.current = true;
+    const handleFix = (lat: number, lng: number) => {
+      setCoords({ lat, lng });
+      const panTo = firstFix.current;
+      firstFix.current = false;
+      mapRef.current?.setUserLocation({ lat, lng }, panTo);
+      setPassengerCount((pc) => {
+        setFares((f) => {
+          broadcastLocation(lat, lng, capacity, pc, f.reduce((s, x) => s + x.amount, 0));
+          return f;
+        });
+        return pc;
+      });
+    };
     if (Platform.OS !== "web") {
       const { granted } = await Location.requestForegroundPermissionsAsync();
       if (!granted) {
@@ -226,34 +241,12 @@ export default function DriverScreen() {
       }
       locationSub.current = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, timeInterval: 3000, distanceInterval: 5 },
-        (loc) => {
-          const { latitude: lat, longitude: lng } = loc.coords;
-          setCoords({ lat, lng });
-          mapRef.current?.setUserLocation({ lat, lng }, true);
-          setPassengerCount((pc) => {
-            setFares((f) => {
-              broadcastLocation(lat, lng, capacity, pc, f.reduce((s, x) => s + x.amount, 0));
-              return f;
-            });
-            return pc;
-          });
-        },
+        (loc) => handleFix(loc.coords.latitude, loc.coords.longitude),
       );
     } else {
       if (!navigator.geolocation) { Alert.alert("GPS not available"); return; }
       const id = navigator.geolocation.watchPosition(
-        (pos) => {
-          const { latitude: lat, longitude: lng } = pos.coords;
-          setCoords({ lat, lng });
-          mapRef.current?.setUserLocation({ lat, lng }, true);
-          setPassengerCount((pc) => {
-            setFares((f) => {
-              broadcastLocation(lat, lng, capacity, pc, f.reduce((s, x) => s + x.amount, 0));
-              return f;
-            });
-            return pc;
-          });
-        },
+        (pos) => handleFix(pos.coords.latitude, pos.coords.longitude),
         () => {},
         { enableHighAccuracy: true, maximumAge: 3000 },
       );
