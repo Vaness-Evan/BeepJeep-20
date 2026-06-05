@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, fareRecordsTable, ratingsTable, fleetsTable } from "@workspace/db";
+import { db, fareRecordsTable, ratingsTable, fleetsTable, usersTable } from "@workspace/db";
 import { eq, gte, and, desc } from "drizzle-orm";
 import { authMiddleware, requireRole, type AuthRequest } from "../middlewares/auth";
 
@@ -78,6 +78,17 @@ router.get("/driver/fleet", requireRole("fleet_driver"), async (req: AuthRequest
     .where(eq(fleetsTable.id, user.fleetId))
     .limit(1);
   res.json({ fleetName: fleet?.name ?? null });
+});
+
+router.put("/driver/route", requireRole("fleet_driver"), async (req: AuthRequest, res) => {
+  const { route } = req.body ?? {};
+  if (typeof route !== "string") {
+    res.status(400).json({ error: "route string is required" });
+    return;
+  }
+  const trimmed = route.trim() || null;
+  await db.update(usersTable).set({ route: trimmed }).where(eq(usersTable.id, req.user!.id));
+  res.json({ success: true, route: trimmed });
 });
 
 export default router;

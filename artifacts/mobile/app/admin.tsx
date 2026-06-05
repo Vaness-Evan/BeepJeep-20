@@ -20,16 +20,30 @@ type AdminTab = "map" | "fleet" | "reports";
 interface Fleet {
   id: number;
   name: string;
+  jeepCount: number;
   driverCount: number;
   createdAt: string;
 }
 
-interface FleetDriver {
+interface JeepDriver {
   id: number;
   name: string;
   username: string;
-  vehicleNumber: string | null;
   route: string | null;
+}
+
+interface Jeep {
+  id: number;
+  fleetId: number;
+  vehicleNumber: string;
+  driver: JeepDriver | null;
+  createdAt: string;
+}
+
+interface UnassignedDriver {
+  id: number;
+  name: string;
+  username: string;
 }
 
 interface Summary {
@@ -77,16 +91,29 @@ export default function AdminScreen() {
   const [fleets, setFleets] = useState<Fleet[]>([]);
   const [fleetsLoading, setFleetsLoading] = useState(false);
   const [expandedFleet, setExpandedFleet] = useState<number | null>(null);
-  const [fleetDrivers, setFleetDrivers] = useState<Record<number, FleetDriver[]>>({});
-  // IDs of all drivers belonging to this admin's fleets (for map filtering)
+  const [fleetJeeps, setFleetJeeps] = useState<Record<number, Jeep[]>>({});
   const [fleetDriverIds, setFleetDriverIds] = useState<Set<number>>(new Set());
+
+  // Create fleet
   const [showCreateFleet, setShowCreateFleet] = useState(false);
   const [newFleetName, setNewFleetName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [showAddDriver, setShowAddDriver] = useState(false);
-  const [addDriverFleetId, setAddDriverFleetId] = useState<number | null>(null);
-  const [driverForm, setDriverForm] = useState({ name: "", username: "", password: "", vehicleNumber: "", route: "" });
-  const [addingDriver, setAddingDriver] = useState(false);
+
+  // Add jeep
+  const [showAddJeep, setShowAddJeep] = useState(false);
+  const [addJeepFleetId, setAddJeepFleetId] = useState<number | null>(null);
+  const [newVehicleNumber, setNewVehicleNumber] = useState("");
+  const [addingJeep, setAddingJeep] = useState(false);
+
+  // Assign driver
+  const [showAssignDriver, setShowAssignDriver] = useState(false);
+  const [assignJeepId, setAssignJeepId] = useState<number | null>(null);
+  const [assignFleetId, setAssignFleetId] = useState<number | null>(null);
+  const [unassignedDrivers, setUnassignedDrivers] = useState<UnassignedDriver[]>([]);
+  const [unassignedLoading, setUnassignedLoading] = useState(false);
+  const [showCreateDriverForm, setShowCreateDriverForm] = useState(false);
+  const [newDriverForm, setNewDriverForm] = useState({ name: "", username: "", password: "" });
+  const [assigningDriver, setAssigningDriver] = useState(false);
 
   const [driverRatings, setDriverRatings] = useState<Record<number, DriverRatings>>({});
   const [ratingsFleetDriverId, setRatingsFleetDriverId] = useState<number | null>(null);
@@ -110,7 +137,6 @@ export default function AdminScreen() {
   const topPad = Platform.OS === "web" ? 0 : insets.top;
   const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
 
-  // Only show this admin's fleet drivers on the map
   const fleetOnlyDrivers = fleetDriverIds.size > 0
     ? drivers.filter((d) => fleetDriverIds.has(parseInt(d.driverId)))
     : [];
@@ -130,7 +156,6 @@ export default function AdminScreen() {
     }
   }, [mapReady, fleetRoutes]);
 
-  // Real-time route updates from socket
   useEffect(() => {
     if (!mapReady) return;
     routeUpdates.forEach((r) => {
@@ -150,7 +175,6 @@ export default function AdminScreen() {
     });
   }, [removedFleetIds, mapReady]);
 
-  // Always load fleet driver IDs on mount so the map tab can filter correctly
   useEffect(() => {
     loadFleets();
   }, []);
@@ -164,14 +188,13 @@ export default function AdminScreen() {
     try {
       const data = await apiJson<Fleet[]>("/fleets");
       setFleets(data);
-      // Load all fleet driver IDs for map filtering + load routes
       const allIds = new Set<number>();
       await Promise.all(
         data.map(async (fleet) => {
           try {
-            const driversData = await apiJson<FleetDriver[]>(`/fleets/${fleet.id}/drivers`);
-            driversData.forEach((d) => allIds.add(d.id));
-            setFleetDrivers((prev) => ({ ...prev, [fleet.id]: driversData }));
+            const jeepsData = await apiJson<Jeep[]>(`/fleets/${fleet.id}/jeeps`);
+            jeepsData.forEach((j) => { if (j.driver) allIds.add(j.driver.id); });
+            setFleetJeeps((prev) => ({ ...prev, [fleet.id]: jeepsData }));
           } catch {}
           try {
             const routeData = await apiJson<FleetRoute>(`/routes/fleet/${fleet.id}`);
@@ -187,6 +210,16 @@ export default function AdminScreen() {
     } finally {
       setFleetsLoading(false);
     }
+  }
+
+  async function loadFleetJeeps(fleetId: number) {
+    try {
+      const data = await apiJson<Jeep[]>(`/fleets/${fleetId}/jeeps`);
+      setFleetJeeps((prev) => ({ ...prev, [fleetId]: data }));
+      const allIds = new Set(fleetDriverIds);
+      data.forEach((j) => { if (j.driver) allIds.add(j.driver.id); });
+      setFleetDriverIds(allIds);
+    } catch {}
   }
 
   function openRouteBuilder(fleetId: number) {
@@ -219,19 +252,12 @@ export default function AdminScreen() {
     setShowRouteBuilder(false);
   }
 
-  async function loadFleetDrivers(fleetId: number) {
-    try {
-      const data = await apiJson<FleetDriver[]>(`/fleets/${fleetId}/drivers`);
-      setFleetDrivers((prev) => ({ ...prev, [fleetId]: data }));
-    } catch {}
-  }
-
   function toggleFleet(fleetId: number) {
     if (expandedFleet === fleetId) {
       setExpandedFleet(null);
     } else {
       setExpandedFleet(fleetId);
-      if (!fleetDrivers[fleetId]) loadFleetDrivers(fleetId);
+      if (!fleetJeeps[fleetId]) loadFleetJeeps(fleetId);
     }
     Haptics.selectionAsync();
   }
@@ -240,11 +266,18 @@ export default function AdminScreen() {
     if (!newFleetName.trim()) return;
     setCreating(true);
     try {
-      await apiJson("/fleets", { method: "POST", body: JSON.stringify({ name: newFleetName.trim() }) });
+      const fleet = await apiJson<Fleet>("/fleets", { method: "POST", body: JSON.stringify({ name: newFleetName.trim() }) });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setNewFleetName("");
       setShowCreateFleet(false);
-      loadFleets();
+      await loadFleets();
+      // Auto-expand new fleet and prompt to add a jeep
+      setExpandedFleet(fleet.id);
+      setFleetJeeps((prev) => ({ ...prev, [fleet.id]: [] }));
+      setTimeout(() => {
+        setAddJeepFleetId(fleet.id);
+        setShowAddJeep(true);
+      }, 400);
     } catch (e: any) {
       Alert.alert("Error", e.message);
     } finally {
@@ -252,34 +285,139 @@ export default function AdminScreen() {
     }
   }
 
-  async function addDriver() {
-    if (!driverForm.name || !driverForm.username || !driverForm.password || !addDriverFleetId) return;
-    setAddingDriver(true);
+  function openAddJeep(fleetId: number) {
+    setAddJeepFleetId(fleetId);
+    setNewVehicleNumber("");
+    setShowAddJeep(true);
+    Haptics.selectionAsync();
+  }
+
+  async function createJeep() {
+    if (!newVehicleNumber.trim() || !addJeepFleetId) return;
+    setAddingJeep(true);
     try {
-      await apiJson(`/fleets/${addDriverFleetId}/drivers`, {
+      const jeep = await apiJson<Jeep>(`/fleets/${addJeepFleetId}/jeeps`, {
         method: "POST",
-        body: JSON.stringify(driverForm),
+        body: JSON.stringify({ vehicleNumber: newVehicleNumber.trim() }),
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowAddDriver(false);
-      setDriverForm({ name: "", username: "", password: "", vehicleNumber: "", route: "" });
-      loadFleetDrivers(addDriverFleetId);
+      setFleetJeeps((prev) => ({ ...prev, [addJeepFleetId]: [...(prev[addJeepFleetId] ?? []), jeep] }));
+      setNewVehicleNumber("");
+      setShowAddJeep(false);
       loadFleets();
+      // Immediately prompt to assign a driver
+      setTimeout(() => {
+        openAssignDriver(jeep.id, addJeepFleetId!);
+      }, 400);
     } catch (e: any) {
       Alert.alert("Error", e.message);
     } finally {
-      setAddingDriver(false);
+      setAddingJeep(false);
     }
   }
 
-  async function removeDriver(fleetId: number, driverId: number, driverName: string) {
-    Alert.alert("Remove Driver", `Remove ${driverName} from fleet?`, [
+  async function openAssignDriver(jeepId: number, fleetId: number) {
+    setAssignJeepId(jeepId);
+    setAssignFleetId(fleetId);
+    setShowCreateDriverForm(false);
+    setNewDriverForm({ name: "", username: "", password: "" });
+    setUnassignedLoading(true);
+    setShowAssignDriver(true);
+    try {
+      const data = await apiJson<UnassignedDriver[]>(`/fleets/${fleetId}/unassigned-drivers`);
+      setUnassignedDrivers(data);
+    } catch {
+      setUnassignedDrivers([]);
+    } finally {
+      setUnassignedLoading(false);
+    }
+  }
+
+  async function assignExistingDriver(driverId: number) {
+    if (!assignJeepId) return;
+    setAssigningDriver(true);
+    try {
+      const result = await apiJson<{ jeepId: number; driver: JeepDriver }>(`/jeeps/${assignJeepId}/assign-driver`, {
+        method: "POST",
+        body: JSON.stringify({ driverId }),
+      });
+      setFleetJeeps((prev) => {
+        const fleetId = assignFleetId!;
+        return {
+          ...prev,
+          [fleetId]: (prev[fleetId] ?? []).map((j) =>
+            j.id === assignJeepId ? { ...j, driver: result.driver } : j
+          ),
+        };
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowAssignDriver(false);
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setAssigningDriver(false);
+    }
+  }
+
+  async function createAndAssignDriver() {
+    if (!assignJeepId || !newDriverForm.name || !newDriverForm.username || newDriverForm.password.length < 6) return;
+    setAssigningDriver(true);
+    try {
+      const result = await apiJson<{ jeepId: number; driver: JeepDriver }>(`/jeeps/${assignJeepId}/assign-driver`, {
+        method: "POST",
+        body: JSON.stringify(newDriverForm),
+      });
+      setFleetJeeps((prev) => {
+        const fleetId = assignFleetId!;
+        return {
+          ...prev,
+          [fleetId]: (prev[fleetId] ?? []).map((j) =>
+            j.id === assignJeepId ? { ...j, driver: result.driver } : j
+          ),
+        };
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowAssignDriver(false);
+      setNewDriverForm({ name: "", username: "", password: "" });
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setAssigningDriver(false);
+    }
+  }
+
+  async function unassignDriver(jeepId: number, fleetId: number, driverName: string) {
+    Alert.alert("Unassign Driver", `Remove ${driverName} from this jeep?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Unassign", style: "destructive", onPress: async () => {
+          try {
+            await apiJson(`/jeeps/${jeepId}/driver`, { method: "DELETE" });
+            setFleetJeeps((prev) => ({
+              ...prev,
+              [fleetId]: (prev[fleetId] ?? []).map((j) =>
+                j.id === jeepId ? { ...j, driver: null } : j
+              ),
+            }));
+          } catch (e: any) {
+            Alert.alert("Error", e.message);
+          }
+        },
+      },
+    ]);
+  }
+
+  async function removeJeep(jeepId: number, fleetId: number, vehicleNumber: string) {
+    Alert.alert("Remove Jeep", `Remove jeep ${vehicleNumber} from fleet?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Remove", style: "destructive", onPress: async () => {
           try {
-            await apiJson(`/fleets/${fleetId}/drivers/${driverId}`, { method: "DELETE" });
-            loadFleetDrivers(fleetId);
+            await apiJson(`/jeeps/${jeepId}`, { method: "DELETE" });
+            setFleetJeeps((prev) => ({
+              ...prev,
+              [fleetId]: (prev[fleetId] ?? []).filter((j) => j.id !== jeepId),
+            }));
             loadFleets();
           } catch (e: any) {
             Alert.alert("Error", e.message);
@@ -490,7 +628,7 @@ export default function AdminScreen() {
             <View style={s.empty}>
               <MaterialCommunityIcons name="bus-multiple" size={40} color={colors.mutedForeground} />
               <Text style={s.emptyText}>No fleets yet</Text>
-              <Text style={s.emptySubtext}>Create a fleet to start managing drivers</Text>
+              <Text style={s.emptySubtext}>Create a fleet to start managing jeeps and drivers</Text>
             </View>
           ) : (
             fleets.map((fleet) => (
@@ -501,13 +639,16 @@ export default function AdminScreen() {
                   </View>
                   <View style={s.fleetInfo}>
                     <Text style={s.fleetName}>{fleet.name}</Text>
-                    <Text style={s.fleetMeta}>{fleet.driverCount} driver{fleet.driverCount !== 1 ? "s" : ""}</Text>
+                    <Text style={s.fleetMeta}>{fleet.jeepCount ?? fleet.driverCount} jeep{(fleet.jeepCount ?? fleet.driverCount) !== 1 ? "s" : ""}</Text>
                   </View>
                   <TouchableOpacity style={s.fareSettingsBtn} onPress={() => openFareSettings(fleet.id)}>
                     <MaterialCommunityIcons name="cash-edit" size={16} color={colors.primary} />
                     <Text style={s.fareSettingsBtnText}>Fares</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[s.fareSettingsBtn, { backgroundColor: fleetRoutes[fleet.id] ? "#fff7ed" : "#f3f4f6", borderColor: fleetRoutes[fleet.id] ? colors.primary : "#e5e7eb", borderWidth: 1 }]} onPress={() => openRouteBuilder(fleet.id)}>
+                  <TouchableOpacity
+                    style={[s.fareSettingsBtn, { backgroundColor: fleetRoutes[fleet.id] ? "#fff7ed" : "#f3f4f6", borderColor: fleetRoutes[fleet.id] ? colors.primary : "#e5e7eb", borderWidth: 1 }]}
+                    onPress={() => openRouteBuilder(fleet.id)}
+                  >
                     <MaterialCommunityIcons name="map-marker-path" size={16} color={fleetRoutes[fleet.id] ? colors.primary : colors.mutedForeground} />
                     <Text style={[s.fareSettingsBtnText, { color: fleetRoutes[fleet.id] ? colors.primary : colors.mutedForeground }]}>
                       {fleetRoutes[fleet.id] ? "Route" : "Add Route"}
@@ -518,34 +659,72 @@ export default function AdminScreen() {
 
                 {expandedFleet === fleet.id && (
                   <View style={s.fleetBody}>
-                    <TouchableOpacity
-                      style={s.addDriverBtn}
-                      onPress={() => { setAddDriverFleetId(fleet.id); setShowAddDriver(true); }}
-                    >
-                      <Feather name="user-plus" size={16} color={colors.primary} />
-                      <Text style={s.addDriverBtnText}>Add Driver</Text>
+                    <TouchableOpacity style={s.addJeepBtn} onPress={() => openAddJeep(fleet.id)}>
+                      <MaterialCommunityIcons name="bus-plus" size={16} color={colors.primary} />
+                      <Text style={s.addJeepBtnText}>Add Jeep</Text>
                     </TouchableOpacity>
 
-                    {fleetDrivers[fleet.id]?.length === 0 && (
-                      <Text style={s.noDrivers}>No drivers in this fleet</Text>
+                    {!fleetJeeps[fleet.id] ? (
+                      <ActivityIndicator color={colors.primary} size="small" style={{ marginTop: 8 }} />
+                    ) : fleetJeeps[fleet.id].length === 0 ? (
+                      <Text style={s.noJeeps}>No jeeps in this fleet yet</Text>
+                    ) : (
+                      fleetJeeps[fleet.id].map((jeep) => (
+                        <View key={jeep.id} style={s.jeepCard}>
+                          {/* Jeep header row */}
+                          <View style={s.jeepHeaderRow}>
+                            <View style={s.jeepIcon}>
+                              <MaterialCommunityIcons name="bus" size={18} color={colors.primary} />
+                            </View>
+                            <View style={s.jeepInfo}>
+                              <Text style={s.jeepVehicleNumber}>{jeep.vehicleNumber}</Text>
+                              {jeep.driver ? (
+                                <Text style={s.jeepDriverName}>{jeep.driver.name}</Text>
+                              ) : (
+                                <Text style={s.jeepNoDriver}>No driver assigned</Text>
+                              )}
+                            </View>
+                            <View style={s.jeepActions}>
+                              {jeep.driver && (
+                                <TouchableOpacity onPress={() => viewDriverRatings(jeep.driver!.id)} style={s.iconBtn}>
+                                  <Feather name="star" size={14} color="#F59E0B" />
+                                </TouchableOpacity>
+                              )}
+                              <TouchableOpacity onPress={() => removeJeep(jeep.id, fleet.id, jeep.vehicleNumber)} style={s.iconBtn}>
+                                <Feather name="trash-2" size={14} color={colors.destructive} />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Driver section */}
+                          <View style={s.jeepDriverSection}>
+                            {jeep.driver ? (
+                              <View style={s.jeepDriverRow}>
+                                <View style={s.driverPill}>
+                                  <MaterialCommunityIcons name="account" size={13} color={colors.primary} />
+                                  <Text style={s.driverPillText}>@{jeep.driver.username}</Text>
+                                  {jeep.driver.route && (
+                                    <Text style={s.driverRoutePill}>{jeep.driver.route}</Text>
+                                  )}
+                                </View>
+                                <TouchableOpacity style={s.changeDriverBtn} onPress={() => openAssignDriver(jeep.id, fleet.id)}>
+                                  <Feather name="refresh-cw" size={12} color={colors.mutedForeground} />
+                                  <Text style={s.changeDriverBtnText}>Change</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={s.unassignBtn} onPress={() => unassignDriver(jeep.id, fleet.id, jeep.driver!.name)}>
+                                  <Feather name="user-minus" size={12} color={colors.destructive} />
+                                </TouchableOpacity>
+                              </View>
+                            ) : (
+                              <TouchableOpacity style={s.assignDriverBtn} onPress={() => openAssignDriver(jeep.id, fleet.id)}>
+                                <Feather name="user-plus" size={14} color={colors.primary} />
+                                <Text style={s.assignDriverBtnText}>Assign Driver</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+                      ))
                     )}
-                    {fleetDrivers[fleet.id]?.map((d) => (
-                      <View key={d.id} style={s.driverRow}>
-                        <View style={s.driverAvatar}>
-                          <MaterialCommunityIcons name="bus" size={16} color={colors.primary} />
-                        </View>
-                        <View style={s.driverInfo}>
-                          <Text style={s.driverName}>{d.name}</Text>
-                          <Text style={s.driverMeta}>@{d.username}{d.vehicleNumber ? ` · ${d.vehicleNumber}` : ""}{d.route ? ` · ${d.route}` : ""}</Text>
-                        </View>
-                        <TouchableOpacity onPress={() => viewDriverRatings(d.id)} style={s.ratingsBtn}>
-                          <Feather name="star" size={14} color="#F59E0B" />
-                        </TouchableOpacity>
-                        <TouchableOpacity onPress={() => removeDriver(fleet.id, d.id, d.name)} style={s.removeBtn}>
-                          <Feather name="trash-2" size={16} color={colors.destructive} />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
                   </View>
                 )}
               </View>
@@ -618,10 +797,14 @@ export default function AdminScreen() {
         <View style={s.modalOverlay}>
           <View style={s.modal}>
             <Text style={s.modalTitle}>Create Fleet</Text>
+            <Text style={s.modalSub}>Step 1 of 3 — Name your fleet</Text>
             <TextInput
-              style={s.modalInput} placeholder="Fleet name (e.g. Route 1 Fleet)"
+              style={s.modalInput}
+              placeholder="Fleet name (e.g. Antipolo Fleet)"
               placeholderTextColor={colors.mutedForeground}
-              value={newFleetName} onChangeText={setNewFleetName} autoFocus
+              value={newFleetName}
+              onChangeText={setNewFleetName}
+              autoFocus
             />
             <View style={s.modalBtns}>
               <TouchableOpacity style={s.modalCancel} onPress={() => { setShowCreateFleet(false); setNewFleetName(""); }}>
@@ -629,52 +812,132 @@ export default function AdminScreen() {
               </TouchableOpacity>
               <TouchableOpacity
                 style={[s.modalConfirm, (!newFleetName.trim() || creating) && s.btnDisabled]}
-                onPress={createFleet} disabled={!newFleetName.trim() || creating}
+                onPress={createFleet}
+                disabled={!newFleetName.trim() || creating}
               >
-                {creating ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Create</Text>}
+                {creating ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Next →</Text>}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* ADD DRIVER MODAL */}
-      <Modal visible={showAddDriver} transparent animationType="slide">
-        <ScrollView contentContainerStyle={s.modalOverlay} keyboardShouldPersistTaps="handled">
-          <View style={[s.modal, { paddingBottom: 24 }]}>
-            <Text style={s.modalTitle}>Add Fleet Driver</Text>
-            <Text style={s.modalSub}>Provide login credentials for the driver</Text>
-            {[
-              { key: "name", placeholder: "Driver name", autoCapitalize: "words" },
-              { key: "username", placeholder: "Username (for login)", autoCapitalize: "none" },
-              { key: "password", placeholder: "Password (min 6 chars)", secure: true },
-              { key: "vehicleNumber", placeholder: "Vehicle number (optional)", autoCapitalize: "characters" },
-              { key: "route", placeholder: "Route (optional)" },
-            ].map(({ key, placeholder, autoCapitalize, secure }) => (
-              <TextInput
-                key={key}
-                style={s.modalInput}
-                placeholder={placeholder}
-                placeholderTextColor={colors.mutedForeground}
-                value={(driverForm as any)[key]}
-                onChangeText={(v) => setDriverForm((f) => ({ ...f, [key]: v }))}
-                autoCapitalize={(autoCapitalize as any) ?? "words"}
-                secureTextEntry={secure}
-                autoCorrect={false}
-              />
-            ))}
+      {/* ADD JEEP MODAL */}
+      <Modal visible={showAddJeep} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modal}>
+            <Text style={s.modalTitle}>Add Jeep</Text>
+            <Text style={s.modalSub}>Step 2 of 3 — Enter the vehicle number</Text>
+            <TextInput
+              style={s.modalInput}
+              placeholder="Vehicle number (e.g. AAA 1234)"
+              placeholderTextColor={colors.mutedForeground}
+              value={newVehicleNumber}
+              onChangeText={setNewVehicleNumber}
+              autoCapitalize="characters"
+              autoFocus
+            />
             <View style={s.modalBtns}>
-              <TouchableOpacity style={s.modalCancel} onPress={() => { setShowAddDriver(false); setDriverForm({ name: "", username: "", password: "", vehicleNumber: "", route: "" }); }}>
-                <Text style={s.modalCancelText}>Cancel</Text>
+              <TouchableOpacity style={s.modalCancel} onPress={() => { setShowAddJeep(false); setNewVehicleNumber(""); }}>
+                <Text style={s.modalCancelText}>Skip</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.modalConfirm, (!driverForm.name || !driverForm.username || driverForm.password.length < 6 || addingDriver) && s.btnDisabled]}
-                onPress={addDriver}
-                disabled={!driverForm.name || !driverForm.username || driverForm.password.length < 6 || addingDriver}
+                style={[s.modalConfirm, (!newVehicleNumber.trim() || addingJeep) && s.btnDisabled]}
+                onPress={createJeep}
+                disabled={!newVehicleNumber.trim() || addingJeep}
               >
-                {addingDriver ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Add Driver</Text>}
+                {addingJeep ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Next →</Text>}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ASSIGN DRIVER MODAL */}
+      <Modal visible={showAssignDriver} transparent animationType="slide">
+        <ScrollView contentContainerStyle={s.modalOverlay} keyboardShouldPersistTaps="handled">
+          <View style={[s.modal, { paddingBottom: 24 }]}>
+            {!showCreateDriverForm ? (
+              <>
+                <Text style={s.modalTitle}>Assign Driver</Text>
+                <Text style={s.modalSub}>Step 3 of 3 — Choose an existing driver or create one</Text>
+
+                {unassignedLoading ? (
+                  <ActivityIndicator color={colors.primary} style={{ marginVertical: 20 }} />
+                ) : unassignedDrivers.length > 0 ? (
+                  <>
+                    <Text style={s.assignSectionLabel}>Available drivers in this fleet</Text>
+                    {unassignedDrivers.map((d) => (
+                      <TouchableOpacity
+                        key={d.id}
+                        style={s.driverOption}
+                        onPress={() => assignExistingDriver(d.id)}
+                        disabled={assigningDriver}
+                      >
+                        <View style={s.driverOptionAvatar}>
+                          <MaterialCommunityIcons name="account" size={18} color={colors.primary} />
+                        </View>
+                        <View style={s.driverOptionInfo}>
+                          <Text style={s.driverOptionName}>{d.name}</Text>
+                          <Text style={s.driverOptionUsername}>@{d.username}</Text>
+                        </View>
+                        {assigningDriver ? (
+                          <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                          <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                    <View style={s.divider} />
+                  </>
+                ) : (
+                  <Text style={s.noUnassignedText}>No unassigned drivers in this fleet yet.</Text>
+                )}
+
+                <TouchableOpacity style={s.createDriverBtn} onPress={() => setShowCreateDriverForm(true)}>
+                  <Feather name="user-plus" size={16} color="#fff" />
+                  <Text style={s.createDriverBtnText}>Create New Driver</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[s.modalCancel, { marginTop: 12 }]} onPress={() => setShowAssignDriver(false)}>
+                  <Text style={s.modalCancelText}>Skip for now</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={s.modalTitle}>Create Driver</Text>
+                <Text style={s.modalSub}>Set login credentials for the new driver</Text>
+                {[
+                  { key: "name", placeholder: "Driver name", autoCapitalize: "words" },
+                  { key: "username", placeholder: "Username (for login)", autoCapitalize: "none" },
+                  { key: "password", placeholder: "Password (min 6 chars)", secure: true },
+                ].map(({ key, placeholder, autoCapitalize, secure }) => (
+                  <TextInput
+                    key={key}
+                    style={s.modalInput}
+                    placeholder={placeholder}
+                    placeholderTextColor={colors.mutedForeground}
+                    value={(newDriverForm as any)[key]}
+                    onChangeText={(v) => setNewDriverForm((f) => ({ ...f, [key]: v }))}
+                    autoCapitalize={(autoCapitalize as any) ?? "words"}
+                    secureTextEntry={secure}
+                    autoCorrect={false}
+                  />
+                ))}
+                <View style={s.modalBtns}>
+                  <TouchableOpacity style={s.modalCancel} onPress={() => setShowCreateDriverForm(false)}>
+                    <Text style={s.modalCancelText}>← Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.modalConfirm, (!newDriverForm.name || !newDriverForm.username || newDriverForm.password.length < 6 || assigningDriver) && s.btnDisabled]}
+                    onPress={createAndAssignDriver}
+                    disabled={!newDriverForm.name || !newDriverForm.username || newDriverForm.password.length < 6 || assigningDriver}
+                  >
+                    {assigningDriver ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Create & Assign</Text>}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </ScrollView>
       </Modal>
@@ -690,12 +953,7 @@ export default function AdminScreen() {
                   <Text style={s.ratingsAvg}>{currentRatings.average.toFixed(1)}</Text>
                   <View style={s.ratingsStars}>
                     {[1, 2, 3, 4, 5].map((star) => (
-                      <Feather
-                        key={star}
-                        name="star"
-                        size={18}
-                        color={star <= Math.round(currentRatings.average) ? "#F59E0B" : colors.border}
-                      />
+                      <Feather key={star} name="star" size={18} color={star <= Math.round(currentRatings.average) ? "#F59E0B" : colors.border} />
                     ))}
                   </View>
                   <Text style={s.ratingsCount}>{currentRatings.count} review{currentRatings.count !== 1 ? "s" : ""}</Text>
@@ -799,7 +1057,6 @@ export default function AdminScreen() {
         onRequestClose={handleRouteCancel}
       >
         <View style={{ flex: 1, backgroundColor: "#fff" }}>
-          {/* Header */}
           <View style={[s.routeBuilderHeader, { paddingTop: topPad > 0 ? topPad : 12 }]}>
             <View style={{ flex: 1 }}>
               <Text style={s.routeBuilderTitle}>
@@ -816,7 +1073,6 @@ export default function AdminScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Route builder saving overlay */}
           {routeBuilderSaving && (
             <View style={s.routeBuilderSavingOverlay}>
               <ActivityIndicator color={colors.primary} size="large" />
@@ -824,7 +1080,6 @@ export default function AdminScreen() {
             </View>
           )}
 
-          {/* Hint row */}
           <View style={s.routeBuilderHint}>
             <MaterialCommunityIcons name="map-marker-path" size={14} color={colors.primary} />
             <Text style={s.routeBuilderHintText}>
@@ -834,7 +1089,6 @@ export default function AdminScreen() {
             </Text>
           </View>
 
-          {/* Map route builder */}
           {showRouteBuilder && routeBuilderFleetId !== null && (
             <MobileRouteBuilder
               fleetName={fleets.find((f) => f.id === routeBuilderFleetId)?.name ?? "Fleet"}
@@ -921,17 +1175,29 @@ function makeStyles(c: ReturnType<typeof useColors>) {
     fleetMeta: { fontSize: 12, color: c.mutedForeground, marginTop: 2 },
     fareSettingsBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: c.secondary, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 5, marginRight: 8 },
     fareSettingsBtnText: { fontSize: 11, fontWeight: "700", color: c.primary },
-    fleetBody: { padding: 16, paddingTop: 0, gap: 8 },
-    addDriverBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: c.primary, alignSelf: "flex-start", marginBottom: 8 },
-    addDriverBtnText: { fontSize: 13, fontWeight: "600", color: c.primary },
-    noDrivers: { fontSize: 13, color: c.mutedForeground, paddingVertical: 8 },
-    driverRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: c.border },
-    driverAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: c.secondary, alignItems: "center", justifyContent: "center" },
-    driverInfo: { flex: 1 },
-    driverName: { fontSize: 14, fontWeight: "700", color: c.foreground },
-    driverMeta: { fontSize: 12, color: c.mutedForeground, marginTop: 1 },
-    ratingsBtn: { padding: 6 },
-    removeBtn: { padding: 6 },
+    fleetBody: { padding: 16, paddingTop: 8, gap: 10 },
+    addJeepBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1.5, borderColor: c.primary, alignSelf: "flex-start", marginBottom: 4 },
+    addJeepBtnText: { fontSize: 13, fontWeight: "600", color: c.primary },
+    noJeeps: { fontSize: 13, color: c.mutedForeground, paddingVertical: 8 },
+    jeepCard: { backgroundColor: c.background, borderRadius: 12, borderWidth: 1, borderColor: c.border, overflow: "hidden" },
+    jeepHeaderRow: { flexDirection: "row", alignItems: "center", padding: 12, gap: 10 },
+    jeepIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: c.secondary, alignItems: "center", justifyContent: "center" },
+    jeepInfo: { flex: 1 },
+    jeepVehicleNumber: { fontSize: 15, fontWeight: "800", color: c.foreground },
+    jeepDriverName: { fontSize: 12, color: c.mutedForeground, marginTop: 1 },
+    jeepNoDriver: { fontSize: 12, color: "#F59E0B", marginTop: 1, fontWeight: "600" },
+    jeepActions: { flexDirection: "row", gap: 4 },
+    iconBtn: { padding: 6 },
+    jeepDriverSection: { borderTopWidth: 1, borderTopColor: c.border, paddingHorizontal: 12, paddingVertical: 10 },
+    jeepDriverRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    driverPill: { flex: 1, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: c.secondary, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
+    driverPillText: { fontSize: 12, color: c.foreground, fontWeight: "600" },
+    driverRoutePill: { fontSize: 11, color: c.mutedForeground },
+    changeDriverBtn: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: c.border },
+    changeDriverBtnText: { fontSize: 11, color: c.mutedForeground, fontWeight: "600" },
+    unassignBtn: { padding: 6 },
+    assignDriverBtn: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 1.5, borderColor: c.primary },
+    assignDriverBtnText: { fontSize: 13, fontWeight: "600", color: c.primary },
     statsGrid: { flexDirection: "row", gap: 12, marginBottom: 12 },
     statCard: { backgroundColor: c.card, borderRadius: 16, padding: 16, alignItems: "center", gap: 4, borderWidth: 1, borderColor: c.border },
     statValue: { fontSize: 22, fontWeight: "800" },
@@ -967,6 +1233,16 @@ function makeStyles(c: ReturnType<typeof useColors>) {
     modalConfirm: { flex: 1, backgroundColor: c.primary, borderRadius: 14, padding: 14, alignItems: "center" },
     modalConfirmText: { color: "#fff", fontWeight: "700", fontSize: 15 },
     btnDisabled: { opacity: 0.4 },
+    assignSectionLabel: { fontSize: 12, fontWeight: "700", color: c.mutedForeground, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 },
+    driverOption: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: c.border },
+    driverOptionAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: c.secondary, alignItems: "center", justifyContent: "center" },
+    driverOptionInfo: { flex: 1 },
+    driverOptionName: { fontSize: 14, fontWeight: "700", color: c.foreground },
+    driverOptionUsername: { fontSize: 12, color: c.mutedForeground },
+    divider: { height: 1, backgroundColor: c.border, marginVertical: 12 },
+    noUnassignedText: { fontSize: 13, color: c.mutedForeground, textAlign: "center", paddingVertical: 16 },
+    createDriverBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: c.primary, borderRadius: 14, padding: 14 },
+    createDriverBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
     profileHeader: { alignItems: "center", gap: 8, marginBottom: 20 },
     profileAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: c.primary, alignItems: "center", justifyContent: "center" },
     profileName: { fontSize: 20, fontWeight: "800", color: c.foreground },
@@ -1005,12 +1281,12 @@ function makeStyles(c: ReturnType<typeof useColors>) {
       paddingHorizontal: 16, paddingVertical: 8,
       backgroundColor: "#fff7ed", borderBottomWidth: 1, borderBottomColor: "#fed7aa",
     },
-    routeBuilderHintText: { flex: 1, fontSize: 12, color: "#92400e", fontWeight: "500" },
+    routeBuilderHintText: { fontSize: 12, color: "#92400e", flex: 1 },
     routeBuilderSavingOverlay: {
-      position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: "rgba(255,255,255,0.85)", zIndex: 99,
-      alignItems: "center", justifyContent: "center", gap: 12,
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "rgba(255,255,255,0.85)",
+      alignItems: "center", justifyContent: "center", zIndex: 99, gap: 12,
     },
-    routeBuilderSavingText: { fontSize: 15, fontWeight: "700", color: c.foreground },
+    routeBuilderSavingText: { fontSize: 15, fontWeight: "600", color: c.foreground },
   });
 }

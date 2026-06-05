@@ -83,6 +83,12 @@ export default function DriverScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [fleetName, setFleetName] = useState<string>("");
 
+  // Route state — driver can set their own route
+  const [driverRoute, setDriverRoute] = useState<string>(user?.route ?? "");
+  const [showRouteEdit, setShowRouteEdit] = useState(false);
+  const [editRouteInput, setEditRouteInput] = useState("");
+  const [savingRoute, setSavingRoute] = useState(false);
+
   const [showProfile, setShowProfile] = useState(false);
   const [profileTab, setProfileTab] = useState<ProfileTab>("profile");
   const [showFareEdit, setShowFareEdit] = useState(false);
@@ -126,8 +132,6 @@ export default function DriverScreen() {
     if (mapReady) mapRef.current?.setCommuterLocations(commuterLocations);
   }, [commuterLocations, mapReady]);
 
-  // Directly remove commuter from map the moment the socket event fires —
-  // this bypasses the React state chain and avoids the marker lingering.
   useEffect(() => {
     if (!socket) return;
     const handler = (data: { commuterId: string }) => {
@@ -199,7 +203,6 @@ export default function DriverScreen() {
       Haptics.selectionAsync();
       return;
     }
-    // No cached coords yet — get a one-shot fix
     try {
       if (Platform.OS !== "web") {
         const { granted } = await Location.requestForegroundPermissionsAsync();
@@ -244,7 +247,7 @@ export default function DriverScreen() {
         driverName: user!.name,
         lat, lng,
         status: cap,
-        route: user?.route ?? "Route 1",
+        route: driverRoute || "Route 1",
         passengerCount: pCount,
         totalFare: fareTotal,
         lastUpdated: Date.now(),
@@ -252,7 +255,7 @@ export default function DriverScreen() {
         fleetId: user?.fleetId ?? null,
       });
     },
-    [socket, user, fleetName],
+    [socket, user, fleetName, driverRoute],
   );
 
   const startTracking = useCallback(async () => {
@@ -427,6 +430,28 @@ export default function DriverScreen() {
     }
   }
 
+  function openRouteEdit() {
+    setEditRouteInput(driverRoute);
+    setShowRouteEdit(true);
+  }
+
+  async function saveRoute() {
+    setSavingRoute(true);
+    try {
+      const result = await apiJson<{ success: boolean; route: string | null }>("/driver/route", {
+        method: "PUT",
+        body: JSON.stringify({ route: editRouteInput }),
+      });
+      setDriverRoute(result.route ?? "");
+      setShowRouteEdit(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert("Error", e.message ?? "Could not save route.");
+    } finally {
+      setSavingRoute(false);
+    }
+  }
+
   const s = makeStyles(colors);
   const topPad = Platform.OS === "web" ? 0 : insets.top;
   const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
@@ -448,6 +473,14 @@ export default function DriverScreen() {
           </View>
         </TouchableOpacity>
         <View style={s.headerRight}>
+          {/* Route pill — tap to edit */}
+          <TouchableOpacity style={s.routePill} onPress={openRouteEdit} activeOpacity={0.8}>
+            <MaterialCommunityIcons name="map-marker-path" size={13} color={colors.primary} />
+            <Text style={s.routePillText} numberOfLines={1}>
+              {driverRoute || "Set Route"}
+            </Text>
+            <Feather name="edit-2" size={11} color={colors.primary} />
+          </TouchableOpacity>
           {isFleetDriver && (
             <View style={s.fleetBadge}>
               <MaterialCommunityIcons name="bus-multiple" size={12} color={colors.primary} />
@@ -493,6 +526,12 @@ export default function DriverScreen() {
           <MaterialCommunityIcons name="account" size={15} color="#3B82F6" />
           <Text style={s.legendText}>Commuter</Text>
         </View>
+        {driverRoute ? (
+          <View style={s.legendItem}>
+            <MaterialCommunityIcons name="map-marker-path" size={13} color={colors.primary} />
+            <Text style={[s.legendText, { color: colors.primary }]}>{driverRoute}</Text>
+          </View>
+        ) : null}
       </View>
 
       <ScrollView style={s.panel} contentContainerStyle={s.panelContent} showsVerticalScrollIndicator={false}>
@@ -611,11 +650,44 @@ export default function DriverScreen() {
         )}
       </ScrollView>
 
-      {/* PROFILE MODAL — tabs for independent drivers */}
+      {/* ROUTE EDIT MODAL */}
+      <Modal visible={showRouteEdit} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modal}>
+            <Text style={s.modalTitle}>My Route</Text>
+            <Text style={s.modalSub}>Enter the route you are currently driving</Text>
+            <TextInput
+              style={s.modalInput}
+              placeholder="e.g. Antipolo - Cubao"
+              placeholderTextColor={colors.mutedForeground}
+              value={editRouteInput}
+              onChangeText={setEditRouteInput}
+              autoFocus
+              autoCapitalize="words"
+            />
+            <Text style={s.routeHint}>
+              This route will be visible to commuters looking for your jeep.
+            </Text>
+            <View style={s.modalBtns}>
+              <TouchableOpacity style={s.modalCancel} onPress={() => setShowRouteEdit(false)}>
+                <Text style={s.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.modalConfirm, savingRoute && s.btnDisabled]}
+                onPress={saveRoute}
+                disabled={savingRoute}
+              >
+                {savingRoute ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Save Route</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* PROFILE MODAL */}
       <Modal visible={showProfile} transparent animationType="slide">
         <View style={s.modalOverlay}>
           <View style={s.modal}>
-            {/* Avatar + name always shown */}
             <View style={s.profileTop}>
               <View style={[s.profileAvatar, { backgroundColor: colors.primary }]}>
                 <Text style={s.profileAvatarText}>{user?.name?.[0]?.toUpperCase() ?? "D"}</Text>
@@ -628,6 +700,19 @@ export default function DriverScreen() {
                   <Text style={s.roleBadgeText}>{roleLabel}</Text>
                 </View>
               </View>
+            </View>
+
+            {/* Route section — always shown for drivers */}
+            <View style={s.routeSection}>
+              <View style={s.routeSectionHeader}>
+                <MaterialCommunityIcons name="map-marker-path" size={16} color={colors.primary} />
+                <Text style={s.routeSectionTitle}>My Route</Text>
+                <TouchableOpacity style={s.editRouteBtn} onPress={() => { setShowProfile(false); openRouteEdit(); }}>
+                  <Feather name="edit-2" size={13} color={colors.primary} />
+                  <Text style={s.editRouteBtnText}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={s.routeValue}>{driverRoute || "Not set — tap Edit to set your route"}</Text>
             </View>
 
             {/* Tab bar — only for independent drivers */}
@@ -647,8 +732,7 @@ export default function DriverScreen() {
               </View>
             )}
 
-            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-              {/* PROFILE TAB */}
+            <ScrollView style={{ maxHeight: 300 }} showsVerticalScrollIndicator={false}>
               {(profileTab === "profile" || isFleetDriver) && (
                 <>
                   {!isFleetDriver && (
@@ -679,7 +763,6 @@ export default function DriverScreen() {
                 </>
               )}
 
-              {/* HISTORY TAB */}
               {profileTab === "history" && !isFleetDriver && (
                 <>
                   {statsLoading ? (
@@ -703,39 +786,6 @@ export default function DriverScreen() {
                           <Text style={s.statBlockSub}>{driverStats.allTime.passengers} passengers</Text>
                         </View>
                       </View>
-
-                      <Text style={s.breakdownSectionTitle}>Today's Breakdown</Text>
-                      {[
-                        { label: "Regular", count: driverStats.today.regular, color: colors.primary },
-                        { label: "Student", count: driverStats.today.student, color: colors.success },
-                        { label: "Senior", count: driverStats.today.senior, color: "#F59E0B" },
-                      ].map(({ label, count, color }) => (
-                        <View key={label} style={s.breakdownTypeRow}>
-                          <View style={[s.breakdownTypeDot, { backgroundColor: color }]} />
-                          <Text style={s.breakdownTypeLabel}>{label}</Text>
-                          <Text style={[s.breakdownTypeCount, { color }]}>{count}</Text>
-                        </View>
-                      ))}
-
-                      {driverStats.recentFares.length > 0 && (
-                        <>
-                          <Text style={[s.breakdownSectionTitle, { marginTop: 14 }]}>Recent (Today)</Text>
-                          {driverStats.recentFares.slice(0, 10).map((f) => (
-                            <View key={f.id} style={s.fareHistoryRow}>
-                              <View style={[s.fareHistoryDot, {
-                                backgroundColor: f.passengerType === "regular" ? colors.primary
-                                  : f.passengerType === "student" ? colors.success : "#F59E0B"
-                              }]} />
-                              <Text style={s.fareHistoryType}>{f.passengerType.charAt(0).toUpperCase() + f.passengerType.slice(1)}</Text>
-                              <Text style={s.fareHistoryAmt}>₱{f.amount}</Text>
-                              <Text style={s.fareHistoryTime}>
-                                {new Date(f.createdAt).toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" })}
-                              </Text>
-                            </View>
-                          ))}
-                        </>
-                      )}
-
                       <TouchableOpacity style={s.refreshStatsBtn} onPress={loadDriverStats}>
                         <Feather name="refresh-cw" size={13} color={colors.primary} />
                         <Text style={s.refreshStatsBtnText}>Refresh</Text>
@@ -747,7 +797,6 @@ export default function DriverScreen() {
                 </>
               )}
 
-              {/* RATINGS TAB */}
               {profileTab === "ratings" && !isFleetDriver && (
                 <>
                   {statsLoading ? (
@@ -768,7 +817,6 @@ export default function DriverScreen() {
                         </View>
                         <Text style={s.ratingsCountText}>{driverStats.ratings.count} review{driverStats.ratings.count !== 1 ? "s" : ""}</Text>
                       </View>
-
                       {driverStats.ratings.list.length === 0 ? (
                         <Text style={s.noDataText}>No ratings yet</Text>
                       ) : (
@@ -853,23 +901,30 @@ function makeStyles(c: ReturnType<typeof useColors>) {
     root: { flex: 1, backgroundColor: c.background },
     header: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      paddingHorizontal: 20, paddingVertical: 14,
+      paddingHorizontal: 16, paddingVertical: 12,
       borderBottomWidth: 1, borderBottomColor: c.border,
     },
-    headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+    headerLeft: { flexDirection: "row", alignItems: "center", gap: 10 },
     avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: c.primary, alignItems: "center", justifyContent: "center" },
     avatarText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-    headerName: { fontSize: 16, fontWeight: "700", color: c.foreground },
+    headerName: { fontSize: 15, fontWeight: "700", color: c.foreground },
     statusRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 },
     dot: { width: 7, height: 7, borderRadius: 4 },
     statusText: { fontSize: 12, color: c.mutedForeground },
-    headerRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+    headerRight: { flexDirection: "row", alignItems: "center", gap: 6 },
+    routePill: {
+      flexDirection: "row", alignItems: "center", gap: 4,
+      backgroundColor: c.secondary, borderRadius: 20,
+      paddingHorizontal: 10, paddingVertical: 5,
+      borderWidth: 1, borderColor: c.primary, maxWidth: 130,
+    },
+    routePillText: { fontSize: 11, fontWeight: "700", color: c.primary, flex: 1 },
     fleetBadge: {
       flexDirection: "row", alignItems: "center", gap: 4,
       backgroundColor: c.secondary, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4,
     },
     fleetBadgeText: { fontSize: 11, fontWeight: "700", color: c.primary },
-    logoutBtn: { padding: 8 },
+    logoutBtn: { padding: 6 },
     mapWrap: { position: "relative" },
     map: { flex: 1 },
     coordBadge: {
@@ -979,7 +1034,18 @@ function makeStyles(c: ReturnType<typeof useColors>) {
     },
     modalTitle: { fontSize: 18, fontWeight: "800", color: c.foreground, marginBottom: 4 },
     modalSub: { fontSize: 13, color: c.mutedForeground, marginBottom: 16 },
-    profileTop: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 16 },
+    modalInput: {
+      borderWidth: 1, borderColor: c.border, borderRadius: 12,
+      padding: 12, fontSize: 15, color: c.foreground,
+      backgroundColor: c.background, marginBottom: 8,
+    },
+    routeHint: { fontSize: 12, color: c.mutedForeground, marginBottom: 12 },
+    modalBtns: { flexDirection: "row", gap: 12, marginTop: 8 },
+    modalCancel: { flex: 1, backgroundColor: c.secondary, borderRadius: 14, padding: 14, alignItems: "center" },
+    modalCancelText: { color: c.mutedForeground, fontWeight: "700", fontSize: 15 },
+    modalConfirm: { flex: 1, backgroundColor: c.primary, borderRadius: 14, padding: 14, alignItems: "center" },
+    modalConfirmText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+    profileTop: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 14 },
     profileAvatar: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
     profileAvatarText: { color: "#fff", fontWeight: "800", fontSize: 22 },
     profileTopInfo: { flex: 1, gap: 2 },
@@ -991,8 +1057,16 @@ function makeStyles(c: ReturnType<typeof useColors>) {
       paddingHorizontal: 8, paddingVertical: 4, alignSelf: "flex-start", marginTop: 2,
     },
     roleBadgeText: { fontSize: 11, fontWeight: "700", color: c.primary },
+    routeSection: {
+      backgroundColor: c.secondary, borderRadius: 14, padding: 14, marginBottom: 14,
+    },
+    routeSectionHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
+    routeSectionTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: c.foreground },
+    editRouteBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+    editRouteBtnText: { fontSize: 13, color: c.primary, fontWeight: "600" },
+    routeValue: { fontSize: 15, fontWeight: "600", color: c.primary },
     profileTabBar: {
-      flexDirection: "row", borderBottomWidth: 1, borderBottomColor: c.border, marginBottom: 16,
+      flexDirection: "row", borderBottomWidth: 1, borderBottomColor: c.border, marginBottom: 14,
     },
     profileTabItem: { flex: 1, alignItems: "center", paddingVertical: 10 },
     profileTabItemActive: { borderBottomWidth: 2, borderBottomColor: c.primary },
@@ -1015,22 +1089,6 @@ function makeStyles(c: ReturnType<typeof useColors>) {
     statBlockLabel: { fontSize: 10, fontWeight: "700", color: c.mutedForeground, textTransform: "uppercase" },
     statBlockVal: { fontSize: 18, fontWeight: "800" },
     statBlockSub: { fontSize: 10, color: c.mutedForeground },
-    breakdownSectionTitle: {
-      fontSize: 11, fontWeight: "700", color: c.mutedForeground,
-      textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6,
-    },
-    breakdownTypeRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 5 },
-    breakdownTypeDot: { width: 8, height: 8, borderRadius: 4 },
-    breakdownTypeLabel: { flex: 1, fontSize: 13, color: c.foreground },
-    breakdownTypeCount: { fontSize: 13, fontWeight: "700" },
-    fareHistoryRow: {
-      flexDirection: "row", alignItems: "center", gap: 8,
-      paddingVertical: 5, borderTopWidth: 1, borderTopColor: c.border,
-    },
-    fareHistoryDot: { width: 7, height: 7, borderRadius: 4 },
-    fareHistoryType: { flex: 1, fontSize: 13, color: c.foreground },
-    fareHistoryAmt: { fontSize: 13, fontWeight: "700", color: c.primary },
-    fareHistoryTime: { fontSize: 12, color: c.mutedForeground, marginLeft: 6 },
     refreshStatsBtn: {
       flexDirection: "row", alignItems: "center", justifyContent: "center",
       gap: 6, paddingVertical: 10, marginTop: 8,
@@ -1053,11 +1111,6 @@ function makeStyles(c: ReturnType<typeof useColors>) {
       padding: 12, color: c.foreground, fontSize: 16, fontWeight: "700",
       backgroundColor: c.background,
     },
-    modalBtns: { flexDirection: "row", gap: 12, marginTop: 8 },
-    modalCancel: { flex: 1, backgroundColor: c.secondary, borderRadius: 14, padding: 14, alignItems: "center" },
-    modalCancelText: { color: c.mutedForeground, fontWeight: "700", fontSize: 15 },
-    modalConfirm: { flex: 1, backgroundColor: c.primary, borderRadius: 14, padding: 14, alignItems: "center" },
-    modalConfirmText: { color: "#fff", fontWeight: "700", fontSize: 15 },
     modalClose: { backgroundColor: c.secondary, borderRadius: 14, padding: 14, alignItems: "center" },
     modalCloseText: { color: c.primary, fontWeight: "700", fontSize: 15 },
   });

@@ -11,6 +11,7 @@ export const usersTable = pgTable("users", {
   fleetId: integer("fleet_id"),
   vehicleNumber: text("vehicle_number"),
   route: text("route"),
+  jeepId: integer("jeep_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

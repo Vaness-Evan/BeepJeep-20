@@ -95,8 +95,13 @@ router.post("/auth/login", async (req: AuthRequest, res, next) => {
   }
 });
 
-router.get("/auth/me", authMiddleware, (req: AuthRequest, res) => {
-  res.json({ user: req.user });
+router.get("/auth/me", authMiddleware, async (req: AuthRequest, res) => {
+  const [fresh] = await db
+    .select({ id: usersTable.id, username: usersTable.username, name: usersTable.name, role: usersTable.role, fleetId: usersTable.fleetId, route: usersTable.route })
+    .from(usersTable)
+    .where(eq(usersTable.id, req.user!.id))
+    .limit(1);
+  res.json({ user: fresh ?? req.user });
 });
 
 export default router;
