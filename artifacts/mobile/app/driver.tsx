@@ -83,11 +83,13 @@ export default function DriverScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [fleetName, setFleetName] = useState<string>("");
 
-  // Route state — driver can set their own route
+  // Route state — driver picks from admin-created routes
   const [driverRoute, setDriverRoute] = useState<string>(user?.route ?? "");
   const [showRouteEdit, setShowRouteEdit] = useState(false);
-  const [editRouteInput, setEditRouteInput] = useState("");
+  const [selectedRoute, setSelectedRoute] = useState<string>("");
   const [savingRoute, setSavingRoute] = useState(false);
+  const [fleetAvailableRoutes, setFleetAvailableRoutes] = useState<{ name: string }[]>([]);
+  const [routesLoading, setRoutesLoading] = useState(false);
 
   const [showProfile, setShowProfile] = useState(false);
   const [profileTab, setProfileTab] = useState<ProfileTab>("profile");
@@ -430,17 +432,28 @@ export default function DriverScreen() {
     }
   }
 
-  function openRouteEdit() {
-    setEditRouteInput(driverRoute);
+  async function openRouteEdit() {
+    setSelectedRoute(driverRoute);
     setShowRouteEdit(true);
+    if (!user?.fleetId) return;
+    setRoutesLoading(true);
+    try {
+      const route = await apiJson<FleetRouteData | null>(`/routes/fleet/${user.fleetId}`);
+      setFleetAvailableRoutes(route ? [{ name: route.name }] : []);
+    } catch {
+      setFleetAvailableRoutes([]);
+    } finally {
+      setRoutesLoading(false);
+    }
   }
 
   async function saveRoute() {
+    if (!selectedRoute) return;
     setSavingRoute(true);
     try {
       const result = await apiJson<{ success: boolean; route: string | null }>("/driver/route", {
         method: "PUT",
-        body: JSON.stringify({ route: editRouteInput }),
+        body: JSON.stringify({ route: selectedRoute }),
       });
       setDriverRoute(result.route ?? "");
       setShowRouteEdit(false);
@@ -654,30 +667,52 @@ export default function DriverScreen() {
       <Modal visible={showRouteEdit} transparent animationType="slide">
         <View style={s.modalOverlay}>
           <View style={s.modal}>
-            <Text style={s.modalTitle}>My Route</Text>
-            <Text style={s.modalSub}>Enter the route you are currently driving</Text>
-            <TextInput
-              style={s.modalInput}
-              placeholder="e.g. Antipolo - Cubao"
-              placeholderTextColor={colors.mutedForeground}
-              value={editRouteInput}
-              onChangeText={setEditRouteInput}
-              autoFocus
-              autoCapitalize="words"
-            />
-            <Text style={s.routeHint}>
-              This route will be visible to commuters looking for your jeep.
-            </Text>
+            <Text style={s.modalTitle}>Select Route</Text>
+            <Text style={s.modalSub}>Choose the route you are currently driving</Text>
+
+            {routesLoading ? (
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: 24 }} />
+            ) : fleetAvailableRoutes.length === 0 ? (
+              <View style={s.routeEmptyState}>
+                <MaterialCommunityIcons name="map-marker-off" size={32} color={colors.mutedForeground} />
+                <Text style={s.routeEmptyText}>No routes set up yet.</Text>
+                <Text style={s.routeEmptyHint}>Ask your fleet admin to create a route first.</Text>
+              </View>
+            ) : (
+              <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+                {fleetAvailableRoutes.map((r) => {
+                  const active = selectedRoute === r.name;
+                  return (
+                    <TouchableOpacity
+                      key={r.name}
+                      style={[s.routeOption, active && s.routeOptionActive]}
+                      onPress={() => setSelectedRoute(r.name)}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialCommunityIcons
+                        name={active ? "radiobox-marked" : "radiobox-blank"}
+                        size={18}
+                        color={active ? colors.primary : colors.mutedForeground}
+                      />
+                      <Text style={[s.routeOptionText, active && s.routeOptionTextActive]}>
+                        {r.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+
             <View style={s.modalBtns}>
               <TouchableOpacity style={s.modalCancel} onPress={() => setShowRouteEdit(false)}>
                 <Text style={s.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.modalConfirm, savingRoute && s.btnDisabled]}
+                style={[s.modalConfirm, (savingRoute || !selectedRoute || fleetAvailableRoutes.length === 0) && s.btnDisabled]}
                 onPress={saveRoute}
-                disabled={savingRoute}
+                disabled={savingRoute || !selectedRoute || fleetAvailableRoutes.length === 0}
               >
-                {savingRoute ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Save Route</Text>}
+                {savingRoute ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Confirm Route</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -1039,7 +1074,13 @@ function makeStyles(c: ReturnType<typeof useColors>) {
       padding: 12, fontSize: 15, color: c.foreground,
       backgroundColor: c.background, marginBottom: 8,
     },
-    routeHint: { fontSize: 12, color: c.mutedForeground, marginBottom: 12 },
+    routeEmptyState: { alignItems: "center" as const, paddingVertical: 20, gap: 6 },
+    routeEmptyText: { fontSize: 14, fontWeight: "600" as const, color: c.foreground },
+    routeEmptyHint: { fontSize: 12, color: c.mutedForeground, textAlign: "center" as const },
+    routeOption: { flexDirection: "row" as const, alignItems: "center" as const, gap: 10, padding: 12, borderRadius: 10, marginBottom: 6, backgroundColor: c.muted + "44", borderWidth: 1.5, borderColor: "transparent" },
+    routeOptionActive: { backgroundColor: c.primary + "18", borderColor: c.primary },
+    routeOptionText: { flex: 1, fontSize: 14, color: c.foreground },
+    routeOptionTextActive: { fontWeight: "700" as const, color: c.primary },
     modalBtns: { flexDirection: "row", gap: 12, marginTop: 8 },
     modalCancel: { flex: 1, backgroundColor: c.secondary, borderRadius: 14, padding: 14, alignItems: "center" },
     modalCancelText: { color: c.mutedForeground, fontWeight: "700", fontSize: 15 },

@@ -253,6 +253,46 @@ router.post("/fleets/:id/drivers", requireRole("admin"), async (req: AuthRequest
   res.status(201).json(driver);
 });
 
+// Edit a driver's info
+router.put("/fleets/:id/drivers/:driverId", requireRole("admin"), async (req: AuthRequest, res) => {
+  const fleetId = parseInt(String(req.params["id"] ?? ""));
+  const driverId = parseInt(String(req.params["driverId"] ?? ""));
+  if (isNaN(fleetId) || isNaN(driverId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const fleet = await db.select().from(fleetsTable).where(
+    and(eq(fleetsTable.id, fleetId), eq(fleetsTable.adminId, req.user!.id))
+  ).limit(1);
+  if (!fleet.length) { res.status(404).json({ error: "Fleet not found" }); return; }
+
+  const { name, username, password } = req.body ?? {};
+  if (!name?.trim() || !username?.trim()) {
+    res.status(400).json({ error: "name and username are required" });
+    return;
+  }
+
+  const conflict = await db.select({ id: usersTable.id }).from(usersTable)
+    .where(and(eq(usersTable.username, username.trim())))
+    .limit(1);
+  if (conflict.length && conflict[0].id !== driverId) {
+    res.status(409).json({ error: "Username already taken" });
+    return;
+  }
+
+  const updates: Record<string, unknown> = { name: name.trim(), username: username.trim() };
+  if (password) {
+    if (password.length < 6) { res.status(400).json({ error: "Password must be at least 6 characters" }); return; }
+    updates.passwordHash = await bcrypt.hash(password, 10);
+  }
+
+  const [updated] = await db.update(usersTable)
+    .set(updates)
+    .where(and(eq(usersTable.id, driverId), eq(usersTable.fleetId, fleetId), eq(usersTable.role, "fleet_driver")))
+    .returning({ id: usersTable.id, name: usersTable.name, username: usersTable.username, route: usersTable.route, jeepId: usersTable.jeepId });
+
+  if (!updated) { res.status(404).json({ error: "Driver not found" }); return; }
+  res.json(updated);
+});
+
 // Remove a driver from fleet (delete their account)
 router.delete("/fleets/:id/drivers/:driverId", requireRole("admin"), async (req: AuthRequest, res) => {
   const fleetId = parseInt(String(req.params["id"] ?? ""));

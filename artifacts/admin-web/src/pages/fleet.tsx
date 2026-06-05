@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -43,7 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronDown, ChevronRight, Plus, Trash2, UserPlus, Bus, Building2, Map, UserCheck } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, UserPlus, Bus, Building2, Map, UserCheck, Pencil } from "lucide-react";
 import RouteBuilder from "@/components/RouteBuilder";
 import { useQuery as useQueryGeneric } from "@tanstack/react-query";
 
@@ -253,6 +254,8 @@ function DriverRow({ fleetId, driver, onRefresh }: {
   onRefresh: () => void;
 }) {
   const { toast } = useToast();
+  const [showEdit, setShowEdit] = useState(false);
+  const [editForm, setEditForm] = useState({ name: driver.name, username: driver.username, password: "" });
 
   const remove = useMutation({
     mutationFn: () => apiFetch(`/api/fleets/${fleetId}/drivers/${driver.id}`, { method: "DELETE" }),
@@ -260,49 +263,131 @@ function DriverRow({ fleetId, driver, onRefresh }: {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const edit = useMutation({
+    mutationFn: () => apiFetch(`/api/fleets/${fleetId}/drivers/${driver.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(editForm),
+    }),
+    onSuccess: () => {
+      toast({ title: "Driver updated" });
+      setShowEdit(false);
+      setEditForm((f) => ({ ...f, password: "" }));
+      onRefresh();
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  function openEdit() {
+    setEditForm({ name: driver.name, username: driver.username, password: "" });
+    setShowEdit(true);
+  }
+
   return (
-    <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-muted/50 group">
-      <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">
-        {driver.name.charAt(0).toUpperCase()}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold truncate flex items-center gap-2">
-          {driver.name}
-          {driver.jeepId ? (
-            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">Assigned</Badge>
-          ) : (
-            <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground">Unassigned</Badge>
-          )}
+    <>
+      <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-muted/50 group">
+        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">
+          {driver.name.charAt(0).toUpperCase()}
         </div>
-        <div className="text-xs text-muted-foreground truncate">
-          @{driver.username}{driver.route ? ` · ${driver.route}` : ""}
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold truncate flex items-center gap-2">
+            {driver.name}
+            {driver.jeepId ? (
+              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">Assigned</Badge>
+            ) : (
+              <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground">Unassigned</Badge>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground truncate">
+            @{driver.username}{driver.route ? ` · ${driver.route}` : ""}
+          </div>
         </div>
-      </div>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive">
-            <Trash2 className="h-3.5 w-3.5" />
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+            onClick={openEdit}
+            title="Edit driver"
+          >
+            <Pencil className="h-3.5 w-3.5" />
           </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove driver?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete <strong>{driver.name}</strong>'s account.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => remove.mutate()}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove driver?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete <strong>{driver.name}</strong>'s account.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => remove.mutate()}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Remove
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
+
+      {/* Edit Driver Dialog */}
+      <Dialog open={showEdit} onOpenChange={setShowEdit}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Driver — {driver.name}</DialogTitle>
+            <DialogDescription>Update the driver's name, username, or password.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor={`edit-name-${driver.id}`}>Full Name</Label>
+              <Input
+                id={`edit-name-${driver.id}`}
+                value={editForm.name}
+                onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`edit-username-${driver.id}`}>Username</Label>
+              <Input
+                id={`edit-username-${driver.id}`}
+                value={editForm.username}
+                onChange={(e) => setEditForm((f) => ({ ...f, username: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`edit-password-${driver.id}`}>
+                New Password <span className="text-muted-foreground font-normal">(leave blank to keep current)</span>
+              </Label>
+              <Input
+                id={`edit-password-${driver.id}`}
+                type="password"
+                placeholder="Min 6 characters"
+                value={editForm.password}
+                onChange={(e) => setEditForm((f) => ({ ...f, password: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEdit(false)}>Cancel</Button>
+            <Button
+              onClick={() => edit.mutate()}
+              disabled={edit.isPending || !editForm.name.trim() || !editForm.username.trim()}
             >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+              {edit.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
