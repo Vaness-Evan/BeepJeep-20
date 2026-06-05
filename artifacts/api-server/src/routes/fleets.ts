@@ -202,7 +202,7 @@ router.delete("/jeeps/:jeepId", requireRole("admin"), async (req: AuthRequest, r
   res.json({ success: true });
 });
 
-// Legacy: Get drivers in a fleet (kept for backward compat)
+// Get all drivers in a fleet
 router.get("/fleets/:id/drivers", requireRole("admin"), async (req: AuthRequest, res) => {
   const fleetId = parseInt(String(req.params["id"] ?? ""));
   if (isNaN(fleetId)) { res.status(400).json({ error: "Invalid fleet id" }); return; }
@@ -213,11 +213,61 @@ router.get("/fleets/:id/drivers", requireRole("admin"), async (req: AuthRequest,
   if (!fleet.length) { res.status(404).json({ error: "Fleet not found" }); return; }
 
   const drivers = await db
-    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, vehicleNumber: usersTable.vehicleNumber, route: usersTable.route, createdAt: usersTable.createdAt })
+    .select({ id: usersTable.id, name: usersTable.name, username: usersTable.username, vehicleNumber: usersTable.vehicleNumber, route: usersTable.route, jeepId: usersTable.jeepId, createdAt: usersTable.createdAt })
     .from(usersTable)
     .where(and(eq(usersTable.fleetId, fleetId), eq(usersTable.role, "fleet_driver")));
 
   res.json(drivers);
+});
+
+// Add a driver to a fleet (without assigning to a jeepney)
+router.post("/fleets/:id/drivers", requireRole("admin"), async (req: AuthRequest, res) => {
+  const fleetId = parseInt(String(req.params["id"] ?? ""));
+  if (isNaN(fleetId)) { res.status(400).json({ error: "Invalid fleet id" }); return; }
+
+  const fleet = await db.select().from(fleetsTable).where(
+    and(eq(fleetsTable.id, fleetId), eq(fleetsTable.adminId, req.user!.id))
+  ).limit(1);
+  if (!fleet.length) { res.status(404).json({ error: "Fleet not found" }); return; }
+
+  const { name, username, password } = req.body ?? {};
+  if (!name?.trim() || !username?.trim() || !password) {
+    res.status(400).json({ error: "name, username, and password are required" });
+    return;
+  }
+  if (password.length < 6) {
+    res.status(400).json({ error: "Password must be at least 6 characters" });
+    return;
+  }
+
+  const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, username)).limit(1);
+  if (existing.length) { res.status(409).json({ error: "Username already taken" }); return; }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const [driver] = await db.insert(usersTable).values({
+    name: name.trim(), username: username.trim(), passwordHash,
+    role: "fleet_driver",
+    fleetId,
+  }).returning({ id: usersTable.id, name: usersTable.name, username: usersTable.username, route: usersTable.route, jeepId: usersTable.jeepId, createdAt: usersTable.createdAt });
+
+  res.status(201).json(driver);
+});
+
+// Remove a driver from fleet (delete their account)
+router.delete("/fleets/:id/drivers/:driverId", requireRole("admin"), async (req: AuthRequest, res) => {
+  const fleetId = parseInt(String(req.params["id"] ?? ""));
+  const driverId = parseInt(String(req.params["driverId"] ?? ""));
+  if (isNaN(fleetId) || isNaN(driverId)) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const fleet = await db.select().from(fleetsTable).where(
+    and(eq(fleetsTable.id, fleetId), eq(fleetsTable.adminId, req.user!.id))
+  ).limit(1);
+  if (!fleet.length) { res.status(404).json({ error: "Fleet not found" }); return; }
+
+  await db.delete(usersTable).where(
+    and(eq(usersTable.id, driverId), eq(usersTable.fleetId, fleetId), eq(usersTable.role, "fleet_driver"))
+  );
+  res.json({ success: true });
 });
 
 // Delete fleet

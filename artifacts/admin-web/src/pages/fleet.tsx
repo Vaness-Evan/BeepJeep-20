@@ -9,12 +9,13 @@ import {
   getGetFleetsQueryKey,
   getGetFleetDriversQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -33,10 +34,18 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronDown, ChevronRight, Plus, Trash2, UserPlus, Bus, Building2, Map } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Trash2, UserPlus, Bus, Building2, Map, UserCheck } from "lucide-react";
 import RouteBuilder from "@/components/RouteBuilder";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery as useQueryGeneric } from "@tanstack/react-query";
 
 interface FleetRoute {
   id: number;
@@ -47,50 +56,224 @@ interface FleetRoute {
   updatedAt: string;
 }
 
-function useFleetRoute(fleetId: number, enabled: boolean) {
-  return useQuery<FleetRoute | null>({
+interface Jeep {
+  id: number;
+  fleetId: number;
+  vehicleNumber: string;
+  createdAt: string;
+  driver: { id: number; name: string; username: string; route?: string | null } | null;
+}
+
+interface Driver {
+  id: number;
+  name: string;
+  username: string;
+  route?: string | null;
+  jeepId?: number | null;
+  createdAt: string;
+}
+
+async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, { credentials: "include", ...options });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as any).error ?? `Request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+function useFleetRoute(fleetId: number) {
+  return useQueryGeneric<FleetRoute | null>({
     queryKey: ["fleet-route", fleetId],
     queryFn: async () => {
       const res = await fetch(`/api/routes/fleet/${fleetId}`, { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
+  });
+}
+
+function useFleetJeeps(fleetId: number, enabled: boolean) {
+  return useQuery<Jeep[]>({
+    queryKey: ["fleet-jeeps", fleetId],
+    queryFn: () => apiFetch(`/api/fleets/${fleetId}/jeeps`),
     enabled,
   });
 }
 
-function FleetDriverRow({ fleetId, driver }: { fleetId: number; driver: { id: number; name: string; username: string; vehicleNumber?: string | null; route?: string | null } }) {
+function useFleetDriversList(fleetId: number, enabled: boolean) {
+  return useQuery<Driver[]>({
+    queryKey: ["fleet-drivers-list", fleetId],
+    queryFn: () => apiFetch(`/api/fleets/${fleetId}/drivers`),
+    enabled,
+  });
+}
+
+function JeepRow({ fleetId, jeep, allDrivers, onRefresh }: {
+  fleetId: number;
+  jeep: Jeep;
+  allDrivers: Driver[];
+  onRefresh: () => void;
+}) {
   const { toast } = useToast();
-  const qc = useQueryClient();
-  const remove = useRemoveFleetDriver({
-    mutation: {
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: getGetFleetDriversQueryKey(fleetId) });
-        qc.invalidateQueries({ queryKey: getGetFleetsQueryKey() });
-        toast({ title: "Driver removed" });
-      },
-      onError: (e: any) => {
-        toast({ title: "Error", description: e?.response?.data?.error ?? "Failed", variant: "destructive" });
-      },
+  const [showAssign, setShowAssign] = useState(false);
+  const [selectedDriverId, setSelectedDriverId] = useState<string>("");
+
+  const unassignedDrivers = allDrivers.filter((d) => !d.jeepId || d.jeepId === jeep.id);
+
+  const assignDriver = useMutation({
+    mutationFn: (driverId: number) =>
+      apiFetch(`/api/jeeps/${jeep.id}/assign-driver`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driverId }),
+      }),
+    onSuccess: () => {
+      toast({ title: "Driver assigned" });
+      onRefresh();
+      setShowAssign(false);
+      setSelectedDriverId("");
     },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const unassignDriver = useMutation({
+    mutationFn: () => apiFetch(`/api/jeeps/${jeep.id}/driver`, { method: "DELETE" }),
+    onSuccess: () => { toast({ title: "Driver unassigned" }); onRefresh(); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteJeep = useMutation({
+    mutationFn: () => apiFetch(`/api/jeeps/${jeep.id}`, { method: "DELETE" }),
+    onSuccess: () => { toast({ title: "Jeepney removed" }); onRefresh(); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   return (
-    <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-muted/50 group" data-testid={`row-driver-${driver.id}`}>
+    <>
+      <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-muted/50 group">
+        <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center flex-shrink-0">
+          <Bus className="h-3.5 w-3.5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold truncate">{jeep.vehicleNumber}</div>
+          <div className="text-xs text-muted-foreground truncate">
+            {jeep.driver ? (
+              <span className="text-green-600 font-medium">{jeep.driver.name} (@{jeep.driver.username})</span>
+            ) : (
+              <span className="text-muted-foreground italic">No driver assigned</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {jeep.driver ? (
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => unassignDriver.mutate()}>
+              Unassign
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1 text-primary" onClick={() => setShowAssign(true)}>
+              <UserCheck className="h-3 w-3" /> Assign
+            </Button>
+          )}
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove jeepney "{jeep.vehicleNumber}"?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will remove the jeepney{jeep.driver ? ` and unassign ${jeep.driver.name}` : ""}. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => deleteJeep.mutate()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                  Remove
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
+
+      <Dialog open={showAssign} onOpenChange={setShowAssign}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign Driver to {jeep.vehicleNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            {unassignedDrivers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No available drivers. Add drivers to this fleet first.</p>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Select Driver</Label>
+                <Select value={selectedDriverId} onValueChange={setSelectedDriverId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a driver..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unassignedDrivers.map((d) => (
+                      <SelectItem key={d.id} value={String(d.id)}>
+                        {d.name} (@{d.username}){d.jeepId ? " — currently assigned" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAssign(false)}>Cancel</Button>
+            <Button
+              disabled={!selectedDriverId || assignDriver.isPending}
+              onClick={() => assignDriver.mutate(parseInt(selectedDriverId))}
+            >
+              {assignDriver.isPending ? "Assigning..." : "Assign Driver"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function DriverRow({ fleetId, driver, onRefresh }: {
+  fleetId: number;
+  driver: Driver;
+  onRefresh: () => void;
+}) {
+  const { toast } = useToast();
+
+  const remove = useMutation({
+    mutationFn: () => apiFetch(`/api/fleets/${fleetId}/drivers/${driver.id}`, { method: "DELETE" }),
+    onSuccess: () => { toast({ title: "Driver removed" }); onRefresh(); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-muted/50 group">
       <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold flex-shrink-0">
-        {driver.name.charAt(0)}
+        {driver.name.charAt(0).toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-semibold truncate">{driver.name}</div>
+        <div className="text-sm font-semibold truncate flex items-center gap-2">
+          {driver.name}
+          {driver.jeepId ? (
+            <Badge variant="secondary" className="text-[10px] h-4 px-1.5">Assigned</Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px] h-4 px-1.5 text-muted-foreground">Unassigned</Badge>
+          )}
+        </div>
         <div className="text-xs text-muted-foreground truncate">
-          @{driver.username}
-          {driver.vehicleNumber ? ` · ${driver.vehicleNumber}` : ""}
-          {driver.route ? ` · ${driver.route}` : ""}
+          @{driver.username}{driver.route ? ` · ${driver.route}` : ""}
         </div>
       </div>
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive" data-testid={`button-remove-driver-${driver.id}`}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive">
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </AlertDialogTrigger>
@@ -98,13 +281,13 @@ function FleetDriverRow({ fleetId, driver }: { fleetId: number; driver: { id: nu
           <AlertDialogHeader>
             <AlertDialogTitle>Remove driver?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove <strong>{driver.name}</strong> from the fleet. Their account will be deleted.
+              This will permanently delete <strong>{driver.name}</strong>'s account.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => remove.mutate({ fleetId, driverId: driver.id })}
+              onClick={() => remove.mutate()}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Remove
@@ -119,40 +302,66 @@ function FleetDriverRow({ fleetId, driver }: { fleetId: number; driver: { id: nu
 function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: number; createdAt: string } }) {
   const [expanded, setExpanded] = useState(false);
   const [showAddDriver, setShowAddDriver] = useState(false);
+  const [showAddJeep, setShowAddJeep] = useState(false);
   const [showRouteBuilder, setShowRouteBuilder] = useState(false);
-  const [driverForm, setDriverForm] = useState({ name: "", username: "", password: "", vehicleNumber: "", route: "" });
+  const [driverForm, setDriverForm] = useState({ name: "", username: "", password: "" });
+  const [vehicleNumber, setVehicleNumber] = useState("");
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data: drivers, isLoading: driversLoading } = useGetFleetDrivers(fleet.id, {
-    query: { enabled: expanded, queryKey: getGetFleetDriversQueryKey(fleet.id) },
-  });
+  const { data: drivers, isLoading: driversLoading, refetch: refetchDrivers } = useFleetDriversList(fleet.id, expanded);
+  const { data: jeeps, isLoading: jeepsLoading, refetch: refetchJeeps } = useFleetJeeps(fleet.id, expanded);
+  const { data: fleetRoute, refetch: refetchRoute } = useFleetRoute(fleet.id);
 
-  const { data: fleetRoute, refetch: refetchRoute } = useFleetRoute(fleet.id, true);
+  function refreshAll() {
+    refetchDrivers();
+    refetchJeeps();
+    qc.invalidateQueries({ queryKey: getGetFleetsQueryKey() });
+  }
 
-  const addDriver = useAddFleetDriver({
-    mutation: {
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: getGetFleetDriversQueryKey(fleet.id) });
-        qc.invalidateQueries({ queryKey: getGetFleetsQueryKey() });
-        setShowAddDriver(false);
-        setDriverForm({ name: "", username: "", password: "", vehicleNumber: "", route: "" });
-        toast({ title: "Driver added" });
-      },
-      onError: (e: any) => {
-        toast({ title: "Error", description: e?.response?.data?.error ?? "Failed", variant: "destructive" });
-      },
+  const addDriver = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/fleets/${fleet.id}/drivers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(driverForm),
+      }),
+    onSuccess: () => {
+      refreshAll();
+      setShowAddDriver(false);
+      setDriverForm({ name: "", username: "", password: "" });
+      toast({ title: "Driver added" });
     },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const deleteFleet = useDeleteFleet({
-    mutation: {
-      onSuccess: () => {
-        qc.invalidateQueries({ queryKey: getGetFleetsQueryKey() });
-        toast({ title: "Fleet deleted" });
-      },
+  const addJeep = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/fleets/${fleet.id}/jeeps`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vehicleNumber }),
+      }),
+    onSuccess: () => {
+      refreshAll();
+      setShowAddJeep(false);
+      setVehicleNumber("");
+      toast({ title: "Jeepney added" });
     },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+
+  const deleteFleet = useMutation({
+    mutationFn: () => apiFetch(`/api/fleets/${fleet.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: getGetFleetsQueryKey() });
+      toast({ title: "Fleet deleted" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const driverCount = drivers?.length ?? fleet.driverCount;
+  const jeepCount = jeeps?.length ?? 0;
 
   return (
     <Card data-testid={`card-fleet-${fleet.id}`}>
@@ -165,17 +374,18 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
         </div>
         <div className="flex-1">
           <div className="font-semibold text-foreground">{fleet.name}</div>
-          <div className="text-xs text-muted-foreground">
-            {fleet.driverCount} driver{fleet.driverCount !== 1 ? "s" : ""}
-            {fleetRoute ? ` · Route: ${fleetRoute.name}` : ""}
+          <div className="text-xs text-muted-foreground flex gap-2">
+            <span>{driverCount} driver{driverCount !== 1 ? "s" : ""}</span>
+            {expanded && <span>· {jeepCount} jeepne{jeepCount !== 1 ? "ys" : "y"}</span>}
+            {fleetRoute ? <span>· Route: {fleetRoute.name}</span> : null}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           <Button
             variant="outline"
             size="sm"
             className="h-7 px-2 text-xs gap-1 text-orange-600 border-orange-200 hover:bg-orange-50"
-            onClick={(e) => { e.stopPropagation(); setShowRouteBuilder(true); }}
+            onClick={() => setShowRouteBuilder(true)}
             data-testid={`button-route-builder-${fleet.id}`}
           >
             <Map className="h-3 w-3" />
@@ -187,7 +397,6 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                onClick={(e) => e.stopPropagation()}
                 data-testid={`button-delete-fleet-${fleet.id}`}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -201,7 +410,7 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  onClick={() => deleteFleet.mutate({ fleetId: fleet.id })}
+                  onClick={() => deleteFleet.mutate()}
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   Delete
@@ -209,34 +418,80 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          <div onClick={() => setExpanded(!expanded)} className="cursor-pointer">
+            {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          </div>
         </div>
       </div>
 
       {expanded && (
         <CardContent className="pt-0 pb-4 px-5 border-t border-border">
-          <div className="flex items-center justify-between py-3 mb-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Drivers</span>
-            <Button size="sm" variant="outline" onClick={() => setShowAddDriver(true)} data-testid={`button-add-driver-${fleet.id}`}>
-              <UserPlus className="h-3.5 w-3.5 mr-1.5" />
-              Add Driver
-            </Button>
-          </div>
+          <Tabs defaultValue="drivers" className="mt-3">
+            <TabsList className="mb-3">
+              <TabsTrigger value="drivers" className="gap-1.5">
+                <UserPlus className="h-3.5 w-3.5" /> Drivers
+                {drivers && drivers.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1.5">{drivers.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="jeepneys" className="gap-1.5">
+                <Bus className="h-3.5 w-3.5" /> Jeepneys
+                {jeeps && jeeps.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1.5">{jeeps.length}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
 
-          {driversLoading ? (
-            <div className="space-y-2">{[...Array(2)].map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>
-          ) : drivers && drivers.length > 0 ? (
-            <div className="space-y-0.5">
-              {drivers.map((d) => (
-                <FleetDriverRow key={d.id} fleetId={fleet.id} driver={d} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-6 text-muted-foreground text-sm">
-              <Bus className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              No drivers in this fleet yet.
-            </div>
-          )}
+            {/* DRIVERS TAB */}
+            <TabsContent value="drivers">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fleet Drivers</span>
+                <Button size="sm" variant="outline" onClick={() => setShowAddDriver(true)} data-testid={`button-add-driver-${fleet.id}`}>
+                  <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                  Add Driver
+                </Button>
+              </div>
+              {driversLoading ? (
+                <div className="space-y-2">{[...Array(2)].map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>
+              ) : drivers && drivers.length > 0 ? (
+                <div className="space-y-0.5">
+                  {drivers.map((d) => (
+                    <DriverRow key={d.id} fleetId={fleet.id} driver={d} onRefresh={refreshAll} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  <UserPlus className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  No drivers yet. Add your first driver.
+                </div>
+              )}
+            </TabsContent>
+
+            {/* JEEPNEYS TAB */}
+            <TabsContent value="jeepneys">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fleet Jeepneys</span>
+                <Button size="sm" variant="outline" onClick={() => setShowAddJeep(true)} data-testid={`button-add-jeep-${fleet.id}`}>
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Add Jeepney
+                </Button>
+              </div>
+              {jeepsLoading ? (
+                <div className="space-y-2">{[...Array(2)].map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>
+              ) : jeeps && jeeps.length > 0 ? (
+                <div className="space-y-0.5">
+                  {jeeps.map((j) => (
+                    <JeepRow key={j.id} fleetId={fleet.id} jeep={j} allDrivers={drivers ?? []} onRefresh={refreshAll} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  <Bus className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  No jeepneys yet. Add one and assign a driver.
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       )}
 
@@ -252,9 +507,9 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
           <RouteBuilder
             fleetId={fleet.id}
             fleetName={fleet.name}
-            existingRoute={fleetRoute}
-            onSaved={() => { refetchRoute(); }}
-            onDeleted={() => { refetchRoute(); }}
+            existingRoute={fleetRoute ?? undefined}
+            onSaved={() => refetchRoute()}
+            onDeleted={() => refetchRoute()}
           />
         </DialogContent>
       </Dialog>
@@ -266,13 +521,14 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
             <DialogTitle>Add Driver to {fleet.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            {(["name", "username", "password", "vehicleNumber", "route"] as const).map((field) => (
+            {(["name", "username", "password"] as const).map((field) => (
               <div key={field} className="space-y-1.5">
-                <Label htmlFor={`driver-${field}`} className="capitalize">{field === "vehicleNumber" ? "Vehicle Number (optional)" : field === "route" ? "Route (optional)" : field}</Label>
+                <Label htmlFor={`driver-${field}`} className="capitalize">{field}</Label>
                 <Input
                   id={`driver-${field}`}
                   data-testid={`input-driver-${field}`}
                   type={field === "password" ? "password" : "text"}
+                  placeholder={field === "name" ? "Full name" : field === "username" ? "Login username" : "Min 6 characters"}
                   value={driverForm[field]}
                   onChange={(e) => setDriverForm((p) => ({ ...p, [field]: e.target.value }))}
                 />
@@ -282,11 +538,41 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDriver(false)}>Cancel</Button>
             <Button
-              onClick={() => addDriver.mutate({ fleetId: fleet.id, data: driverForm })}
+              onClick={() => addDriver.mutate()}
               disabled={addDriver.isPending || !driverForm.name || !driverForm.username || !driverForm.password}
               data-testid="button-submit-add-driver"
             >
               {addDriver.isPending ? "Adding..." : "Add Driver"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Jeepney Dialog */}
+      <Dialog open={showAddJeep} onOpenChange={setShowAddJeep}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Jeepney to {fleet.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5 py-2">
+            <Label htmlFor="jeep-plate">Plate / Vehicle Number</Label>
+            <Input
+              id="jeep-plate"
+              data-testid="input-jeep-vehicle-number"
+              placeholder="e.g. ABС 1234"
+              value={vehicleNumber}
+              onChange={(e) => setVehicleNumber(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground mt-1">You can assign a driver after creating the jeepney.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddJeep(false)}>Cancel</Button>
+            <Button
+              onClick={() => addJeep.mutate()}
+              disabled={addJeep.isPending || !vehicleNumber.trim()}
+              data-testid="button-submit-add-jeep"
+            >
+              {addJeep.isPending ? "Adding..." : "Add Jeepney"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -320,8 +606,8 @@ export default function FleetPage() {
     <div>
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Fleet & Drivers</h1>
-          <p className="text-sm text-muted-foreground mt-1">Manage your fleets, drivers, and jeepney routes.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight">Fleet Management</h1>
+          <p className="text-sm text-muted-foreground mt-1">Manage fleets, add drivers and jeepneys, and assign drivers to vehicles.</p>
         </div>
         <Button onClick={() => setShowCreate(true)} data-testid="button-create-fleet">
           <Plus className="h-4 w-4 mr-1.5" />
@@ -340,7 +626,7 @@ export default function FleetPage() {
           <CardContent className="py-16 text-center">
             <Building2 className="h-12 w-12 mx-auto mb-4 text-muted-foreground/40" />
             <p className="font-semibold text-foreground">No fleets yet</p>
-            <p className="text-muted-foreground text-sm mt-1">Create a fleet to start adding drivers.</p>
+            <p className="text-muted-foreground text-sm mt-1">Create a fleet to start adding drivers and jeepneys.</p>
             <Button className="mt-4" onClick={() => setShowCreate(true)}>Create your first fleet</Button>
           </CardContent>
         </Card>
