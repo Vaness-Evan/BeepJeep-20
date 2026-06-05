@@ -87,9 +87,10 @@ router.post("/auth/login", async (req: AuthRequest, res, next) => {
       name: user.name,
       role: user.role,
       fleetId: user.fleetId ?? null,
+      routeId: user.routeId ?? null,
     });
 
-    res.json({ token, user: { id: user.id, username: user.username, name: user.name, role: user.role, fleetId: user.fleetId } });
+    res.json({ token, user: { id: user.id, username: user.username, name: user.name, role: user.role, fleetId: user.fleetId, routeId: user.routeId } });
   } catch (err) {
     next(err);
   }

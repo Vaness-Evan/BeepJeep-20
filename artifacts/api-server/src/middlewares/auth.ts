@@ -7,6 +7,7 @@ export interface AuthUser {
   name: string;
   role: string;
   fleetId: number | null;
+  routeId?: number | null;
 }
 
 export interface AuthRequest extends Request {

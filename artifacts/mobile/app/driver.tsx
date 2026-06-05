@@ -36,7 +36,7 @@ type ProfileTab = "profile" | "history" | "ratings";
 
 interface LocalFare {
   id: string;
-  type: "regular" | "student" | "senior";
+  type: "regular" | "student" | "senior" | "custom";
   amount: number;
   timestamp: number;
 }
@@ -100,6 +100,8 @@ export default function DriverScreen() {
   const [fareRates, setFareRates] = useState<FareRates>(DEFAULT_RATES);
   const [editRates, setEditRates] = useState({ regular: "", student: "", senior: "" });
   const [savingFares, setSavingFares] = useState(false);
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customInputValue, setCustomInputValue] = useState("");
 
   const [driverStats, setDriverStats] = useState<DriverStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -112,8 +114,8 @@ export default function DriverScreen() {
   const totalEarnings = fares.reduce((s, f) => s + f.amount, 0);
 
   useEffect(() => {
-    loadFareSettings();
-  }, []);
+    loadFareSettings(driverRouteId ?? undefined);
+  }, [driverRouteId]);
 
   useEffect(() => {
     if (!isFleetDriver || !user?.fleetId) return;
@@ -123,15 +125,15 @@ export default function DriverScreen() {
   }, [isFleetDriver, user?.fleetId]);
 
   useEffect(() => {
-    if (!socket || !isFleetDriver || !user?.fleetId) return;
-    const handler = (data: { fleetId: number; regularFare: number; studentFare: number; seniorFare: number }) => {
-      if (data.fleetId === user.fleetId) {
+    if (!socket) return;
+    const handler = (data: { routeId: number; regularFare: number; studentFare: number; seniorFare: number }) => {
+      if (data.routeId === driverRouteId) {
         setFareRates({ regularFare: data.regularFare, studentFare: data.studentFare, seniorFare: data.seniorFare });
       }
     };
-    socket.on("fleet:fare_updated", handler);
-    return () => { socket.off("fleet:fare_updated", handler); };
-  }, [socket, isFleetDriver, user?.fleetId]);
+    socket.on("route:fare_updated", handler);
+    return () => { socket.off("route:fare_updated", handler); };
+  }, [socket, driverRouteId]);
 
   useEffect(() => {
     if (mapReady) mapRef.current?.setCommuterLocations(commuterLocations);
@@ -185,9 +187,10 @@ export default function DriverScreen() {
     }
   }, [tracking]);
 
-  async function loadFareSettings() {
+  async function loadFareSettings(routeId?: number) {
     try {
-      const data = await apiJson<FareRates>("/fare-settings");
+      const url = routeId ? `/fare-settings?routeId=${routeId}` : "/fare-settings";
+      const data = await apiJson<FareRates>(url);
       setFareRates(data);
     } catch {}
   }
@@ -314,11 +317,13 @@ export default function DriverScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [socket, user]);
 
-  async function addFare(type: "regular" | "student" | "senior") {
-    const amt =
-      type === "regular" ? fareRates.regularFare
+  async function addFare(type: "regular" | "student" | "senior" | "custom", customAmt?: number) {
+    const amt = type === "custom"
+      ? (customAmt ?? 0)
+      : type === "regular" ? fareRates.regularFare
       : type === "student" ? fareRates.studentFare
       : fareRates.seniorFare;
+    if (amt <= 0) return;
     const record: LocalFare = { id: Date.now().toString(), type, amount: amt, timestamp: Date.now() };
 
     setFares((prev) => {
@@ -339,9 +344,20 @@ export default function DriverScreen() {
     try {
       await apiJson("/fares", {
         method: "POST",
-        body: JSON.stringify({ passengerType: type, amount: amt }),
+        body: JSON.stringify({ passengerType: type === "custom" ? "regular" : type, amount: amt }),
       });
     } catch {}
+  }
+
+  function submitCustomFare() {
+    const amt = parseFloat(customInputValue);
+    if (isNaN(amt) || amt <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid fare amount greater than 0.");
+      return;
+    }
+    addFare("custom", amt);
+    setCustomInputValue("");
+    setShowCustomInput(false);
   }
 
   function unboardPassenger() {
@@ -622,7 +638,39 @@ export default function DriverScreen() {
               </TouchableOpacity>
             );
           })}
+          <TouchableOpacity
+            style={[s.fareBtn, s.fareBtnCustom, showCustomInput && s.fareBtnCustomActive]}
+            onPress={() => { setShowCustomInput((v) => !v); setCustomInputValue(""); }}
+            activeOpacity={0.75}
+          >
+            <Text style={[s.fareBtnAmt, s.fareBtnCustomAmt]}>+</Text>
+            <Text style={[s.fareBtnLabel, s.fareBtnCustomLabel]}>Custom</Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Custom fare input */}
+        {showCustomInput && (
+          <View style={s.customInputWrap}>
+            <TextInput
+              style={s.customInput}
+              placeholder="Enter amount (₱)"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="numeric"
+              value={customInputValue}
+              onChangeText={setCustomInputValue}
+              onSubmitEditing={submitCustomFare}
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[s.customConfirmBtn, (!customInputValue || parseFloat(customInputValue) <= 0) && s.btnDisabled]}
+              onPress={submitCustomFare}
+              disabled={!customInputValue || parseFloat(customInputValue) <= 0}
+              activeOpacity={0.8}
+            >
+              <Text style={s.customConfirmText}>Add ₱{customInputValue || "0"}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Action row: Unboard + Reset */}
         <View style={s.actionRow}>
@@ -1031,14 +1079,33 @@ function makeStyles(c: ReturnType<typeof useColors>) {
       fontSize: 13, fontWeight: "700", color: c.mutedForeground,
       textTransform: "uppercase", letterSpacing: 0.5,
     },
-    fareRow: { flexDirection: "row", gap: 10 },
+    fareRow: { flexDirection: "row", gap: 8 },
     fareBtn: {
       flex: 1, height: 72, borderRadius: 16, backgroundColor: c.secondary,
       alignItems: "center", justifyContent: "center",
       borderWidth: 2, borderColor: c.primary,
     },
-    fareBtnAmt: { fontSize: 22, fontWeight: "800", color: c.primary },
-    fareBtnLabel: { fontSize: 12, color: c.secondaryForeground, marginTop: 2 },
+    fareBtnAmt: { fontSize: 20, fontWeight: "800", color: c.primary },
+    fareBtnLabel: { fontSize: 11, color: c.secondaryForeground, marginTop: 2 },
+    fareBtnCustom: { borderColor: "#F59E0B", backgroundColor: "#FEF3C7" },
+    fareBtnCustomActive: { backgroundColor: "#FDE68A", borderColor: "#D97706" },
+    fareBtnCustomAmt: { fontSize: 26, color: "#D97706" },
+    fareBtnCustomLabel: { color: "#92400E" },
+    customInputWrap: {
+      flexDirection: "row", gap: 8, alignItems: "center",
+      backgroundColor: c.card, borderRadius: 14, padding: 10,
+      borderWidth: 1, borderColor: "#F59E0B",
+    },
+    customInput: {
+      flex: 1, borderWidth: 1, borderColor: c.border, borderRadius: 10,
+      paddingHorizontal: 12, paddingVertical: 8, fontSize: 16, fontWeight: "700",
+      color: c.foreground, backgroundColor: c.background,
+    },
+    customConfirmBtn: {
+      backgroundColor: "#D97706", borderRadius: 10,
+      paddingHorizontal: 14, paddingVertical: 10,
+    },
+    customConfirmText: { color: "#fff", fontWeight: "700", fontSize: 14 },
     actionRow: { flexDirection: "row", gap: 10 },
     unboardBtn: {
       flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
