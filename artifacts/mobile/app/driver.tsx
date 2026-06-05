@@ -126,6 +126,17 @@ export default function DriverScreen() {
     if (mapReady) mapRef.current?.setCommuterLocations(commuterLocations);
   }, [commuterLocations, mapReady]);
 
+  // Directly remove commuter from map the moment the socket event fires —
+  // this bypasses the React state chain and avoids the marker lingering.
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (data: { commuterId: string }) => {
+      mapRef.current?.removeCommuter(data.commuterId);
+    };
+    socket.on("commuter:removed", handler);
+    return () => { socket.off("commuter:removed", handler); };
+  }, [socket]);
+
   useEffect(() => {
     if (!mapReady || !isFleetDriver || !user?.fleetId) return;
     apiJson<FleetRouteData | null>(`/routes/fleet/${user.fleetId}`)
@@ -180,6 +191,13 @@ export default function DriverScreen() {
       setDriverStats(data);
     } catch {}
     finally { setStatsLoading(false); }
+  }
+
+  function recenterMap() {
+    if (coords) {
+      mapRef.current?.setUserLocation(coords, true);
+      Haptics.selectionAsync();
+    }
   }
 
   function openProfile() {
@@ -441,6 +459,11 @@ export default function DriverScreen() {
         <TouchableOpacity style={s.mapExpandBtn} onPress={toggleMap} activeOpacity={0.8}>
           <Feather name={mapExpanded ? "chevron-up" : "chevron-down"} size={16} color={colors.primary} />
         </TouchableOpacity>
+        {coords && (
+          <TouchableOpacity style={s.recenterBtn} onPress={recenterMap} activeOpacity={0.8}>
+            <Feather name="crosshair" size={16} color={colors.primary} />
+          </TouchableOpacity>
+        )}
       </Animated.View>
 
       {/* Map legend */}
@@ -848,6 +871,12 @@ function makeStyles(c: ReturnType<typeof useColors>) {
     commuterBadgeText: { fontSize: 11, color: "#8B5CF6", fontWeight: "700" },
     mapExpandBtn: {
       position: "absolute", top: 8, right: 10,
+      backgroundColor: "#fff", borderRadius: 20, padding: 6,
+      shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15, shadowRadius: 4, elevation: 4,
+    },
+    recenterBtn: {
+      position: "absolute", top: 44, right: 10,
       backgroundColor: "#fff", borderRadius: 20, padding: 6,
       shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.15, shadowRadius: 4, elevation: 4,

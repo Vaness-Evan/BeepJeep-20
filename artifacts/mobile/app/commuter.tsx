@@ -162,6 +162,13 @@ export default function CommuterScreen() {
     locationSub.current = null;
   }, []);
 
+  function recenterMap() {
+    if (userCoords) {
+      mapRef.current?.setUserLocation(userCoords, true);
+      Haptics.selectionAsync();
+    }
+  }
+
   function focusDriver(d: DriverData) {
     setSelectedDriver(d);
     mapRef.current?.panTo(d.lat, d.lng, 17);
@@ -285,6 +292,11 @@ export default function CommuterScreen() {
         <TouchableOpacity style={s.expandBtn} onPress={toggleMap} activeOpacity={0.8}>
           <Feather name={mapExpanded ? "chevron-down" : "chevron-up"} size={18} color={colors.primary} />
         </TouchableOpacity>
+        {userCoords && (
+          <TouchableOpacity style={s.recenterBtn} onPress={recenterMap} activeOpacity={0.8}>
+            <Feather name="crosshair" size={18} color={colors.primary} />
+          </TouchableOpacity>
+        )}
 
         {/* Announce / Stop sharing toggle */}
         {isSharing ? (
@@ -489,6 +501,13 @@ function makeStyles(c: ReturnType<typeof useColors>) {
     alertSub: { color: "rgba(255,255,255,0.9)", fontSize: 13, marginTop: 2 },
     expandBtn: {
       position: "absolute", top: 10, right: 10,
+      backgroundColor: "#fff",
+      borderRadius: 20, padding: 8,
+      shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15, shadowRadius: 4, elevation: 4,
+    },
+    recenterBtn: {
+      position: "absolute", top: 52, right: 10,
       backgroundColor: "#fff",
       borderRadius: 20, padding: 8,
       shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
