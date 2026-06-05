@@ -7,7 +7,7 @@ export const usersTable = pgTable("users", {
   username: text("username").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull(),
-  role: text("role").notNull(), // admin | fleet_driver | independent_driver | commuter
+  role: text("role").notNull(), // admin | fleet_driver | commuter
   fleetId: integer("fleet_id"),
   vehicleNumber: text("vehicle_number"),
   route: text("route"),

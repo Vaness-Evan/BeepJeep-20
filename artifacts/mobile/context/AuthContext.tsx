@@ -8,7 +8,7 @@ import React, {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiJson, API_BASE } from "@/lib/api";
 
-export type UserRole = "admin" | "fleet_driver" | "independent_driver" | "commuter";
+export type UserRole = "admin" | "fleet_driver" | "commuter";
 
 export interface AuthUser {
   id: number;

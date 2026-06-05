@@ -8,7 +8,7 @@ const router = Router();
 router.use(authMiddleware);
 
 // Add fare record (any driver)
-router.post("/fares", requireRole("fleet_driver", "independent_driver"), async (req: AuthRequest, res) => {
+router.post("/fares", requireRole("fleet_driver"), async (req: AuthRequest, res) => {
   const { passengerType, amount } = req.body ?? {};
   if (!passengerType || amount === undefined) {
     res.status(400).json({ error: "passengerType and amount are required" });
@@ -27,7 +27,7 @@ router.post("/fares", requireRole("fleet_driver", "independent_driver"), async (
 });
 
 // Get fares (driver: own; admin: fleet)
-router.get("/fares", requireRole("fleet_driver", "independent_driver", "admin"), async (req: AuthRequest, res) => {
+router.get("/fares", requireRole("fleet_driver", "admin"), async (req: AuthRequest, res) => {
   const since = req.query["since"] ? new Date(req.query["since"] as string) : new Date(new Date().setHours(0, 0, 0, 0));
 
   if (req.user!.role === "admin") {

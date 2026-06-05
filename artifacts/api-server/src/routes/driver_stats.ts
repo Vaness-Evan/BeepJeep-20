@@ -6,7 +6,7 @@ import { authMiddleware, requireRole, type AuthRequest } from "../middlewares/au
 const router = Router();
 router.use(authMiddleware);
 
-router.get("/driver/stats", requireRole("independent_driver"), async (req: AuthRequest, res) => {
+router.get("/driver/stats", requireRole("fleet_driver"), async (req: AuthRequest, res) => {
   const driverId = req.user!.id;
 
   const today = new Date();

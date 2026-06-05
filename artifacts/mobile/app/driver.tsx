@@ -71,8 +71,8 @@ export default function DriverScreen() {
   const { socket, connected, commuterLocations, routeUpdates, removedFleetIds } = useSocket();
   const mapRef = useRef<MapWebViewRef>(null);
 
-  const isFleetDriver = user?.role === "fleet_driver";
-  const roleLabel = isFleetDriver ? "Fleet Driver" : "Independent Driver";
+  const isFleetDriver = true;
+  const roleLabel = "Fleet Driver";
 
   const [tracking, setTracking] = useState(false);
   const [capacity, setCapacity] = useState<CapacityStatus>("available");

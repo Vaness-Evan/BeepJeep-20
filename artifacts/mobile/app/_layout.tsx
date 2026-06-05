@@ -23,7 +23,7 @@ function RootLayoutNav() {
     if (!user) {
       router.replace("/");
     } else {
-      const roleRoute = user.role === "fleet_driver" || user.role === "independent_driver"
+      const roleRoute = user.role === "fleet_driver"
         ? "/driver"
         : user.role === "commuter"
         ? "/commuter"

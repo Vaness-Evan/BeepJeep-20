@@ -6,7 +6,7 @@ import { signToken, authMiddleware, type AuthRequest } from "../middlewares/auth
 
 const router = Router();
 
-const SELF_REGISTER_ROLES = ["admin", "commuter", "independent_driver"];
+const SELF_REGISTER_ROLES = ["commuter", "admin"];
 
 router.post("/auth/register", async (req: AuthRequest, res, next) => {
   try {

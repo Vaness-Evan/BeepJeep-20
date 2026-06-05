@@ -8,13 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
-import { useAuth, type UserRole } from "@/context/AuthContext";
-
-const ROLES: { role: UserRole; label: string; desc: string; icon: string }[] = [
-  { role: "commuter", label: "Commuter", desc: "Track jeepneys near you", icon: "map-marker-radius" },
-  { role: "independent_driver", label: "Independent Driver", desc: "Drive & track on your own", icon: "bus" },
-  { role: "admin", label: "Fleet Admin", desc: "Manage a fleet of drivers", icon: "shield-account" },
-];
+import { useAuth } from "@/context/AuthContext";
 
 export default function SignupScreen() {
   const colors = useColors();
@@ -25,21 +19,20 @@ export default function SignupScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
-  const [role, setRole] = useState<UserRole | null>(null);
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const topPad = Platform.OS === "web" ? 40 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
-  const canSubmit = name.trim() && username.trim() && password.length >= 6 && password === confirmPw && role && !loading;
+  const canSubmit = name.trim() && username.trim() && password.length >= 6 && password === confirmPw && !loading;
 
   async function handleRegister() {
-    if (!canSubmit || !role) return;
+    if (!canSubmit) return;
     setError("");
     setLoading(true);
     try {
-      await register(username.trim(), password, name.trim(), role);
+      await register(username.trim(), password, name.trim(), "commuter");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
       setError(e.message ?? "Registration failed");
@@ -66,6 +59,7 @@ export default function SignupScreen() {
               <MaterialCommunityIcons name="bus-multiple" size={28} color="#fff" />
             </View>
             <Text style={s.appName}>Create Account</Text>
+            <Text style={s.subtitle}>Join as a commuter to track jeepneys near you</Text>
           </View>
         </View>
 
@@ -112,28 +106,12 @@ export default function SignupScreen() {
             )}
           </View>
 
-          <Text style={[s.label, { marginBottom: 10 }]}>I am a...</Text>
-          <View style={s.roles}>
-            {ROLES.map(({ role: r, label, desc, icon }) => {
-              const active = role === r;
-              return (
-                <TouchableOpacity
-                  key={r}
-                  style={[s.roleBtn, active && s.roleBtnActive]}
-                  onPress={() => { setRole(r); Haptics.selectionAsync(); }}
-                  activeOpacity={0.75}
-                >
-                  <View style={[s.roleIcon, active && s.roleIconActive]}>
-                    <MaterialCommunityIcons name={icon as any} size={20} color={active ? "#fff" : colors.primary} />
-                  </View>
-                  <View style={s.roleInfo}>
-                    <Text style={[s.roleLabel, active && s.roleLabelActive]}>{label}</Text>
-                    <Text style={s.roleDesc}>{desc}</Text>
-                  </View>
-                  {active && <Feather name="check-circle" size={18} color={colors.primary} />}
-                </TouchableOpacity>
-              );
-            })}
+          <View style={s.infoBox}>
+            <MaterialCommunityIcons name="map-marker-radius" size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.infoTitle}>Commuter Account</Text>
+              <Text style={s.infoDesc}>Track jeepneys near you and announce your pickup location to nearby drivers.</Text>
+            </View>
           </View>
 
           <TouchableOpacity
@@ -150,6 +128,10 @@ export default function SignupScreen() {
           <TouchableOpacity style={s.loginLink} onPress={() => router.replace("/")}>
             <Text style={s.loginLinkText}>Already have an account? <Text style={{ color: colors.primary, fontWeight: "700" }}>Sign in</Text></Text>
           </TouchableOpacity>
+
+          <View style={s.adminNote}>
+            <Text style={s.adminNoteText}>Fleet admin? Register at the <Text style={{ fontWeight: "700" }}>Admin Portal</Text> on the website.</Text>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -187,6 +169,7 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
       alignItems: "center", justifyContent: "center", marginBottom: 8,
     },
     appName: { fontSize: 24, fontWeight: "800", color: "#fff" },
+    subtitle: { fontSize: 13, color: "rgba(255,255,255,0.75)", marginTop: 4, textAlign: "center" },
     card: {
       backgroundColor: colors.background, borderRadius: 20, padding: 24,
       shadowColor: "#000", shadowOffset: { width: 0, height: 8 },
@@ -208,22 +191,12 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     input: { flex: 1, fontSize: 15, color: colors.foreground },
     eyeBtn: { padding: 4 },
     fieldError: { fontSize: 12, color: colors.destructive, marginTop: 4 },
-    roles: { gap: 8, marginBottom: 20 },
-    roleBtn: {
-      flexDirection: "row", alignItems: "center",
-      backgroundColor: colors.muted, borderRadius: 14, padding: 12,
-      borderWidth: 2, borderColor: "transparent",
+    infoBox: {
+      flexDirection: "row", alignItems: "flex-start", gap: 12,
+      backgroundColor: colors.secondary, borderRadius: 12, padding: 14, marginBottom: 20,
     },
-    roleBtnActive: { borderColor: colors.primary, backgroundColor: colors.secondary },
-    roleIcon: {
-      width: 40, height: 40, borderRadius: 20,
-      backgroundColor: colors.secondary, alignItems: "center", justifyContent: "center", marginRight: 12,
-    },
-    roleIconActive: { backgroundColor: colors.primary },
-    roleInfo: { flex: 1 },
-    roleLabel: { fontSize: 15, fontWeight: "700", color: colors.foreground },
-    roleLabelActive: { color: colors.primary },
-    roleDesc: { fontSize: 12, color: colors.mutedForeground, marginTop: 2 },
+    infoTitle: { fontSize: 14, fontWeight: "700", color: colors.foreground, marginBottom: 2 },
+    infoDesc: { fontSize: 12, color: colors.mutedForeground, lineHeight: 17 },
     submitBtn: {
       height: 54, borderRadius: 14, backgroundColor: colors.primary,
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
@@ -232,5 +205,11 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     submitBtnText: { fontSize: 17, fontWeight: "700", color: "#fff" },
     loginLink: { marginTop: 16, alignItems: "center" },
     loginLinkText: { fontSize: 14, color: colors.mutedForeground },
+    adminNote: {
+      marginTop: 12, paddingTop: 12,
+      borderTopWidth: 1, borderTopColor: colors.border,
+      alignItems: "center",
+    },
+    adminNoteText: { fontSize: 12, color: colors.mutedForeground, textAlign: "center" },
   });
 }
