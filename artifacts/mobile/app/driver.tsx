@@ -471,7 +471,7 @@ export default function DriverScreen() {
         )}
         {commuterLocations.length > 0 && (
           <View style={s.commuterBadge}>
-            <MaterialCommunityIcons name="map-marker-radius" size={13} color="#8B5CF6" />
+            <MaterialCommunityIcons name="account" size={13} color="#3B82F6" />
             <Text style={s.commuterBadgeText}>{commuterLocations.length} requesting</Text>
           </View>
         )}
@@ -486,11 +486,11 @@ export default function DriverScreen() {
       {/* Map legend */}
       <View style={s.mapLegend}>
         <View style={s.legendItem}>
-          <View style={[s.ldot, { backgroundColor: colors.primary }]} />
+          <View style={[s.ldot, { backgroundColor: "#3B82F6" }]} />
           <Text style={s.legendText}>You</Text>
         </View>
         <View style={s.legendItem}>
-          <View style={[s.ldot, { backgroundColor: "#8B5CF6" }]} />
+          <MaterialCommunityIcons name="account" size={15} color="#3B82F6" />
           <Text style={s.legendText}>Commuter</Text>
         </View>
       </View>
@@ -885,7 +885,7 @@ function makeStyles(c: ReturnType<typeof useColors>) {
       backgroundColor: "rgba(255,255,255,0.9)", borderRadius: 20,
       paddingHorizontal: 10, paddingVertical: 4,
     },
-    commuterBadgeText: { fontSize: 11, color: "#8B5CF6", fontWeight: "700" },
+    commuterBadgeText: { fontSize: 11, color: "#3B82F6", fontWeight: "700" },
     mapExpandBtn: {
       position: "absolute", top: 8, right: 10,
       backgroundColor: "#fff", borderRadius: 20, padding: 6,

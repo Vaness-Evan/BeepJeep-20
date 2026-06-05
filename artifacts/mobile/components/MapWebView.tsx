@@ -87,7 +87,7 @@ const MAP_HTML = `<!DOCTYPE html>
       display:flex;align-items:center;justify-content:center;
     }
     .c-icon {
-      background:#8B5CF6;border-radius:50%;border:3px solid white;
+      background:#3B82F6;border-radius:50%;border:3px solid white;
       box-shadow:0 2px 8px rgba(0,0,0,.3);
       display:flex;align-items:center;justify-content:center;
     }
