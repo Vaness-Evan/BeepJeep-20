@@ -18,6 +18,7 @@ export interface CommuterLocation {
 }
 
 export interface RouteUpdate {
+  routeId: number;
   fleetId: number;
   name: string;
   routeCoords: { lat: number; lng: number }[];
@@ -29,7 +30,7 @@ interface SocketContextType {
   drivers: DriverData[];
   commuterLocations: CommuterLocation[];
   routeUpdates: RouteUpdate[];
-  removedFleetIds: number[];
+  removedRouteIds: number[];
 }
 
 const SocketContext = createContext<SocketContextType>({
@@ -38,7 +39,7 @@ const SocketContext = createContext<SocketContextType>({
   drivers: [],
   commuterLocations: [],
   routeUpdates: [],
-  removedFleetIds: [],
+  removedRouteIds: [],
 });
 
 export function SocketProvider({ children }: { children: ReactNode }) {
@@ -47,7 +48,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const [drivers, setDrivers] = useState<DriverData[]>([]);
   const [commuterLocations, setCommuterLocations] = useState<CommuterLocation[]>([]);
   const [routeUpdates, setRouteUpdates] = useState<RouteUpdate[]>([]);
-  const [removedFleetIds, setRemovedFleetIds] = useState<number[]>([]);
+  const [removedRouteIds, setRemovedRouteIds] = useState<number[]>([]);
 
   useEffect(() => {
     const domain = process.env.EXPO_PUBLIC_DOMAIN;
@@ -125,7 +126,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
     socket.on("route:updated", (data: RouteUpdate) => {
       setRouteUpdates((prev) => {
-        const idx = prev.findIndex((r) => r.fleetId === data.fleetId);
+        const idx = prev.findIndex((r) => r.routeId === data.routeId);
         if (idx >= 0) {
           const next = [...prev];
           next[idx] = data;
@@ -133,12 +134,12 @@ export function SocketProvider({ children }: { children: ReactNode }) {
         }
         return [...prev, data];
       });
-      setRemovedFleetIds((prev) => prev.filter((id) => id !== data.fleetId));
+      setRemovedRouteIds((prev) => prev.filter((id) => id !== data.routeId));
     });
 
-    socket.on("route:removed", (data: { fleetId: number }) => {
-      setRouteUpdates((prev) => prev.filter((r) => r.fleetId !== data.fleetId));
-      setRemovedFleetIds((prev) => [...prev, data.fleetId]);
+    socket.on("route:removed", (data: { routeId: number; fleetId: number }) => {
+      setRouteUpdates((prev) => prev.filter((r) => r.routeId !== data.routeId));
+      setRemovedRouteIds((prev) => [...prev, data.routeId]);
     });
 
     return () => {
@@ -153,7 +154,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       drivers,
       commuterLocations,
       routeUpdates,
-      removedFleetIds,
+      removedRouteIds,
     }}>
       {children}
     </SocketContext.Provider>

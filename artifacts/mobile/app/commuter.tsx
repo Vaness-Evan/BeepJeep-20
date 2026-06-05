@@ -32,7 +32,7 @@ export default function CommuterScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
-  const { socket, drivers, connected, routeUpdates, removedFleetIds } = useSocket();
+  const { socket, drivers, connected, routeUpdates, removedRouteIds } = useSocket();
   const mapRef = useRef<MapWebViewRef>(null);
 
   const [userCoords, setUserCoords] = useState<UserCoords | null>(null);
@@ -62,10 +62,10 @@ export default function CommuterScreen() {
 
   useEffect(() => {
     if (!mapReady) return;
-    apiJson<{ fleetId: number; name: string; routeCoords: { lat: number; lng: number }[] }[]>("/routes/all")
+    apiJson<{ id: number; fleetId: number; name: string; routeCoords: { lat: number; lng: number }[] }[]>("/routes/all")
       .then((routes) => {
         mapRef.current?.setAllRoutes(
-          routes.map((r) => ({ fleetId: r.fleetId, coords: r.routeCoords, name: r.name }))
+          routes.map((r) => ({ routeId: r.id, coords: r.routeCoords, name: r.name }))
         );
       })
       .catch(() => {});
@@ -74,14 +74,14 @@ export default function CommuterScreen() {
   useEffect(() => {
     if (!mapReady || routeUpdates.length === 0) return;
     routeUpdates.forEach((r) => {
-      mapRef.current?.setFleetRoute(r.fleetId, r.routeCoords, r.name);
+      mapRef.current?.setRoute(r.routeId, r.routeCoords, r.name);
     });
   }, [routeUpdates, mapReady]);
 
   useEffect(() => {
-    if (!mapReady || removedFleetIds.length === 0) return;
-    removedFleetIds.forEach((id) => mapRef.current?.removeFleetRoute(id));
-  }, [removedFleetIds, mapReady]);
+    if (!mapReady || removedRouteIds.length === 0) return;
+    removedRouteIds.forEach((id) => mapRef.current?.removeRoute(id));
+  }, [removedRouteIds, mapReady]);
 
   useEffect(() => {
     startLocationWatch();

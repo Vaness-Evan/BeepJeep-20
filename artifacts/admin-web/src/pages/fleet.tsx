@@ -90,12 +90,12 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-function useFleetRoute(fleetId: number) {
-  return useQueryGeneric<FleetRoute | null>({
-    queryKey: ["fleet-route", fleetId],
+function useFleetRoutes(fleetId: number) {
+  return useQueryGeneric<FleetRoute[]>({
+    queryKey: ["fleet-routes", fleetId],
     queryFn: async () => {
       const res = await fetch(`/api/routes/fleet/${fleetId}`, { credentials: "include" });
-      if (!res.ok) return null;
+      if (!res.ok) return [];
       return res.json();
     },
   });
@@ -396,6 +396,7 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
   const [showAddDriver, setShowAddDriver] = useState(false);
   const [showAddJeep, setShowAddJeep] = useState(false);
   const [showRouteBuilder, setShowRouteBuilder] = useState(false);
+  const [editingRoute, setEditingRoute] = useState<FleetRoute | null>(null);
   const [driverForm, setDriverForm] = useState({ name: "", username: "", password: "" });
   const [vehicleNumber, setVehicleNumber] = useState("");
   const { toast } = useToast();
@@ -403,11 +404,13 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
 
   const { data: drivers, isLoading: driversLoading, refetch: refetchDrivers } = useFleetDriversList(fleet.id, expanded);
   const { data: jeeps, isLoading: jeepsLoading, refetch: refetchJeeps } = useFleetJeeps(fleet.id, expanded);
-  const { data: fleetRoute, refetch: refetchRoute } = useFleetRoute(fleet.id);
+  const { data: fleetRoutes, refetch: refetchRoutes } = useFleetRoutes(fleet.id);
+  const fleetRoute = fleetRoutes?.[0] ?? null;
 
   function refreshAll() {
     refetchDrivers();
     refetchJeeps();
+    refetchRoutes();
     qc.invalidateQueries({ queryKey: getGetFleetsQueryKey() });
   }
 
@@ -469,7 +472,7 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
           <div className="text-xs text-muted-foreground flex gap-2">
             <span>{driverCount} driver{driverCount !== 1 ? "s" : ""}</span>
             {expanded && <span>· {jeepCount} jeepne{jeepCount !== 1 ? "ys" : "y"}</span>}
-            {fleetRoute ? <span>· Route: {fleetRoute.name}</span> : null}
+            {(fleetRoutes?.length ?? 0) > 0 ? <span>· {fleetRoutes!.length} route{fleetRoutes!.length !== 1 ? "s" : ""}</span> : null}
           </div>
         </div>
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -477,11 +480,11 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
             variant="outline"
             size="sm"
             className="h-7 px-2 text-xs gap-1 text-orange-600 border-orange-200 hover:bg-orange-50"
-            onClick={() => setShowRouteBuilder(true)}
+            onClick={() => { setEditingRoute(null); setShowRouteBuilder(true); }}
             data-testid={`button-route-builder-${fleet.id}`}
           >
             <Map className="h-3 w-3" />
-            {fleetRoute ? "Route" : "Add Route"}
+            Add Route
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -530,6 +533,12 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
                 <Bus className="h-3.5 w-3.5" /> Jeepneys
                 {jeeps && jeeps.length > 0 && (
                   <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1.5">{jeeps.length}</Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="routes" className="gap-1.5">
+                <Map className="h-3.5 w-3.5" /> Routes
+                {fleetRoutes && fleetRoutes.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-[10px] h-4 px-1.5">{fleetRoutes.length}</Badge>
                 )}
               </TabsTrigger>
             </TabsList>
@@ -583,6 +592,43 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
                 </div>
               )}
             </TabsContent>
+
+            {/* ROUTES TAB */}
+            <TabsContent value="routes">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Fleet Routes</span>
+                <Button size="sm" variant="outline" onClick={() => { setEditingRoute(null); setShowRouteBuilder(true); }}>
+                  <Plus className="h-3.5 w-3.5 mr-1.5" />
+                  Add Route
+                </Button>
+              </div>
+              {fleetRoutes && fleetRoutes.length > 0 ? (
+                <div className="space-y-1">
+                  {fleetRoutes.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 bg-background hover:bg-muted/40 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <Map className="h-3.5 w-3.5 text-orange-500 shrink-0" />
+                        <span className="text-sm font-medium">{r.name}</span>
+                        {r.routeCoords && (r.routeCoords as any[]).length > 0 && (
+                          <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                            {(r.routeCoords as any[]).length} pts
+                          </Badge>
+                        )}
+                      </div>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-orange-600 hover:text-orange-700"
+                        onClick={() => { setEditingRoute(r); setShowRouteBuilder(true); }}>
+                        Edit
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground text-sm">
+                  <Map className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  No routes yet. Click "Add Route" to build one.
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
         </CardContent>
       )}
@@ -593,15 +639,15 @@ function FleetCard({ fleet }: { fleet: { id: number; name: string; driverCount: 
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Map className="h-5 w-5 text-orange-500" />
-              Route Builder — {fleet.name}
+              {editingRoute ? `Edit Route — ${editingRoute.name}` : `Add Route — ${fleet.name}`}
             </DialogTitle>
           </DialogHeader>
           <RouteBuilder
             fleetId={fleet.id}
             fleetName={fleet.name}
-            existingRoute={fleetRoute ?? undefined}
-            onSaved={() => refetchRoute()}
-            onDeleted={() => refetchRoute()}
+            existingRoute={editingRoute ?? undefined}
+            onSaved={() => { refetchRoutes(); setShowRouteBuilder(false); }}
+            onDeleted={() => { refetchRoutes(); setShowRouteBuilder(false); }}
           />
         </DialogContent>
       </Dialog>

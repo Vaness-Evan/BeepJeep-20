@@ -7,6 +7,7 @@ export interface AuthUser {
   role: UserRole;
   fleetId: number | null;
   route?: string | null;
+  routeId?: number | null;
 }
 
 export interface DriverData {
@@ -16,6 +17,7 @@ export interface DriverData {
   lng: number;
   status: "available" | "full" | "offline";
   route: string;
+  routeId?: number | null;
   passengerCount: number;
   totalFare: number;
   lastUpdated: number;

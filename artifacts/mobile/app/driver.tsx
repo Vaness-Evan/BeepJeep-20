@@ -25,6 +25,7 @@ import { apiJson } from "@/lib/api";
 import { FARE_RATES } from "@/types";
 
 interface FleetRouteData {
+  id: number;
   fleetId: number;
   name: string;
   routeCoords: { lat: number; lng: number }[];
@@ -68,7 +69,7 @@ export default function DriverScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
-  const { socket, connected, commuterLocations, routeUpdates, removedFleetIds } = useSocket();
+  const { socket, connected, commuterLocations, routeUpdates, removedRouteIds } = useSocket();
   const mapRef = useRef<MapWebViewRef>(null);
 
   const isFleetDriver = true;
@@ -85,10 +86,12 @@ export default function DriverScreen() {
 
   // Route state — driver picks from admin-created routes
   const [driverRoute, setDriverRoute] = useState<string>(user?.route ?? "");
+  const [driverRouteId, setDriverRouteId] = useState<number | null>(user?.routeId ?? null);
   const [showRouteEdit, setShowRouteEdit] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<string>("");
+  const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
   const [savingRoute, setSavingRoute] = useState(false);
-  const [fleetAvailableRoutes, setFleetAvailableRoutes] = useState<{ name: string }[]>([]);
+  const [fleetAvailableRoutes, setFleetAvailableRoutes] = useState<{ id: number; name: string }[]>([]);
   const [routesLoading, setRoutesLoading] = useState(false);
 
   const [showProfile, setShowProfile] = useState(false);
@@ -145,29 +148,28 @@ export default function DriverScreen() {
 
   useEffect(() => {
     if (!mapReady || !isFleetDriver || !user?.fleetId) return;
-    apiJson<FleetRouteData | null>(`/routes/fleet/${user.fleetId}`)
-      .then((route) => {
-        if (route && route.routeCoords.length > 0) {
-          mapRef.current?.setFleetRoute(route.fleetId, route.routeCoords, route.name);
-        }
+    apiJson<FleetRouteData[]>(`/routes/fleet/${user.fleetId}`)
+      .then((routes) => {
+        routes.forEach((route) => {
+          if (route.routeCoords.length > 0) {
+            mapRef.current?.setRoute(route.id, route.routeCoords, route.name);
+          }
+        });
       })
       .catch(() => {});
   }, [mapReady, isFleetDriver, user?.fleetId]);
 
   useEffect(() => {
-    if (!mapReady || !isFleetDriver || !user?.fleetId) return;
-    const update = routeUpdates.find((r) => r.fleetId === user.fleetId);
-    if (update) {
-      mapRef.current?.setFleetRoute(update.fleetId, update.routeCoords, update.name);
-    }
-  }, [routeUpdates, mapReady, isFleetDriver, user?.fleetId]);
+    if (!mapReady || routeUpdates.length === 0) return;
+    routeUpdates.forEach((r) => {
+      mapRef.current?.setRoute(r.routeId, r.routeCoords, r.name);
+    });
+  }, [routeUpdates, mapReady]);
 
   useEffect(() => {
-    if (!mapReady || !isFleetDriver || !user?.fleetId) return;
-    if (removedFleetIds.includes(user.fleetId)) {
-      mapRef.current?.removeFleetRoute(user.fleetId);
-    }
-  }, [removedFleetIds, mapReady, isFleetDriver, user?.fleetId]);
+    if (!mapReady || removedRouteIds.length === 0) return;
+    removedRouteIds.forEach((id) => mapRef.current?.removeRoute(id));
+  }, [removedRouteIds, mapReady]);
 
   useEffect(() => {
     if (tracking) {
@@ -250,6 +252,7 @@ export default function DriverScreen() {
         lat, lng,
         status: cap,
         route: driverRoute || "Route 1",
+        routeId: driverRouteId ?? null,
         passengerCount: pCount,
         totalFare: fareTotal,
         lastUpdated: Date.now(),
@@ -257,7 +260,7 @@ export default function DriverScreen() {
         fleetId: user?.fleetId ?? null,
       });
     },
-    [socket, user, fleetName, driverRoute],
+    [socket, user, fleetName, driverRoute, driverRouteId],
   );
 
   const startTracking = useCallback(async () => {
@@ -434,12 +437,13 @@ export default function DriverScreen() {
 
   async function openRouteEdit() {
     setSelectedRoute(driverRoute);
+    setSelectedRouteId(driverRouteId);
     setShowRouteEdit(true);
     if (!user?.fleetId) return;
     setRoutesLoading(true);
     try {
-      const route = await apiJson<FleetRouteData | null>(`/routes/fleet/${user.fleetId}`);
-      setFleetAvailableRoutes(route ? [{ name: route.name }] : []);
+      const routes = await apiJson<FleetRouteData[]>(`/routes/fleet/${user.fleetId}`);
+      setFleetAvailableRoutes(routes.map((r) => ({ id: r.id, name: r.name })));
     } catch {
       setFleetAvailableRoutes([]);
     } finally {
@@ -448,14 +452,15 @@ export default function DriverScreen() {
   }
 
   async function saveRoute() {
-    if (!selectedRoute) return;
+    if (!selectedRoute || selectedRouteId == null) return;
     setSavingRoute(true);
     try {
-      const result = await apiJson<{ success: boolean; route: string | null }>("/driver/route", {
+      const result = await apiJson<{ success: boolean; route: string | null; routeId: number | null }>("/driver/route", {
         method: "PUT",
-        body: JSON.stringify({ route: selectedRoute }),
+        body: JSON.stringify({ route: selectedRoute, routeId: selectedRouteId }),
       });
       setDriverRoute(result.route ?? "");
+      setDriverRouteId(result.routeId ?? null);
       setShowRouteEdit(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
@@ -681,12 +686,12 @@ export default function DriverScreen() {
             ) : (
               <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
                 {fleetAvailableRoutes.map((r) => {
-                  const active = selectedRoute === r.name;
+                  const active = selectedRouteId === r.id;
                   return (
                     <TouchableOpacity
-                      key={r.name}
+                      key={r.id}
                       style={[s.routeOption, active && s.routeOptionActive]}
-                      onPress={() => setSelectedRoute(r.name)}
+                      onPress={() => { setSelectedRoute(r.name); setSelectedRouteId(r.id); }}
                       activeOpacity={0.7}
                     >
                       <MaterialCommunityIcons
@@ -708,9 +713,9 @@ export default function DriverScreen() {
                 <Text style={s.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.modalConfirm, (savingRoute || !selectedRoute || fleetAvailableRoutes.length === 0) && s.btnDisabled]}
+                style={[s.modalConfirm, (savingRoute || selectedRouteId == null || fleetAvailableRoutes.length === 0) && s.btnDisabled]}
                 onPress={saveRoute}
-                disabled={savingRoute || !selectedRoute || fleetAvailableRoutes.length === 0}
+                disabled={savingRoute || selectedRouteId == null || fleetAvailableRoutes.length === 0}
               >
                 {savingRoute ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.modalConfirmText}>Confirm Route</Text>}
               </TouchableOpacity>

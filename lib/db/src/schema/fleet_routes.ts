@@ -6,7 +6,7 @@ export type Waypoint = z.infer<typeof waypointSchema>;
 
 export const fleetRoutesTable = pgTable("fleet_routes", {
   id: serial("id").primaryKey(),
-  fleetId: integer("fleet_id").notNull().unique(),
+  fleetId: integer("fleet_id").notNull(),
   name: text("name").notNull(),
   waypoints: jsonb("waypoints").notNull().$type<Waypoint[]>(),
   routeCoords: jsonb("route_coords").notNull().$type<Waypoint[]>(),

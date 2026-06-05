@@ -81,14 +81,15 @@ router.get("/driver/fleet", requireRole("fleet_driver"), async (req: AuthRequest
 });
 
 router.put("/driver/route", requireRole("fleet_driver"), async (req: AuthRequest, res) => {
-  const { route } = req.body ?? {};
+  const { route, routeId } = req.body ?? {};
   if (typeof route !== "string") {
     res.status(400).json({ error: "route string is required" });
     return;
   }
   const trimmed = route.trim() || null;
-  await db.update(usersTable).set({ route: trimmed }).where(eq(usersTable.id, req.user!.id));
-  res.json({ success: true, route: trimmed });
+  const rid = typeof routeId === "number" ? routeId : null;
+  await db.update(usersTable).set({ route: trimmed, routeId: rid }).where(eq(usersTable.id, req.user!.id));
+  res.json({ success: true, route: trimmed, routeId: rid });
 });
 
 export default router;

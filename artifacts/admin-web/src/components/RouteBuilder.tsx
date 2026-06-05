@@ -24,7 +24,7 @@ interface NominatimResult {
 interface Props {
   fleetId: number;
   fleetName: string;
-  existingRoute?: { name: string; waypoints: Waypoint[]; routeCoords: Waypoint[] } | null;
+  existingRoute?: { id: number; name: string; waypoints: Waypoint[]; routeCoords: Waypoint[] } | null;
   onSaved: () => void;
   onDeleted: () => void;
 }
@@ -180,8 +180,17 @@ export default function RouteBuilder({ fleetId, fleetName, existingRoute, onSave
     if (!routeName.trim()) { toast({ title: "Route name required", variant: "destructive" }); return; }
     setSaving(true);
     try {
-      const res = await fetch(`/api/routes/fleet/${fleetId}`, {
-        method: "PUT",
+      let url: string;
+      let method: string;
+      if (existingRoute?.id) {
+        url = `/api/routes/${existingRoute.id}`;
+        method = "PUT";
+      } else {
+        url = `/api/routes/fleet/${fleetId}`;
+        method = "POST";
+      }
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ name: routeName.trim(), waypoints, routeCoords }),
       });
@@ -197,9 +206,10 @@ export default function RouteBuilder({ fleetId, fleetName, existingRoute, onSave
   }
 
   async function deleteRoute() {
+    if (!existingRoute?.id) return;
     setDeleting(true);
     try {
-      await fetch(`/api/routes/fleet/${fleetId}`, {
+      await fetch(`/api/routes/${existingRoute.id}`, {
         method: "DELETE",
         headers: { "Authorization": `Bearer ${token}` },
       });
@@ -242,10 +252,12 @@ export default function RouteBuilder({ fleetId, fleetName, existingRoute, onSave
               <Button size="sm" variant="outline" onClick={() => setBuilding(true)} className="h-8">
                 <Route className="h-3.5 w-3.5 mr-1" /> Edit Route
               </Button>
-              <Button size="sm" variant="outline" onClick={deleteRoute} disabled={deleting}
-                className="h-8 text-destructive hover:text-destructive">
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </Button>
+              {existingRoute?.id && (
+                <Button size="sm" variant="outline" onClick={deleteRoute} disabled={deleting}
+                  className="h-8 text-destructive hover:text-destructive">
+                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                </Button>
+              )}
             </>
           )}
         </div>

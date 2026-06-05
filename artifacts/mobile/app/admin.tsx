@@ -70,6 +70,7 @@ interface FareRates {
 }
 
 interface FleetRoute {
+  id: number;
   fleetId: number;
   name: string;
   waypoints: Waypoint[];
@@ -80,7 +81,7 @@ export default function AdminScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { user, logout, token } = useAuth();
-  const { drivers, connected, routeUpdates, removedFleetIds } = useSocket();
+  const { drivers, connected, routeUpdates, removedRouteIds } = useSocket();
   const mapRef = useRef<MapWebViewRef>(null);
   const [mapReady, setMapReady] = useState(false);
   const [tab, setTab] = useState<AdminTab>("map");
@@ -129,7 +130,7 @@ export default function AdminScreen() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
 
-  const [fleetRoutes, setFleetRoutes] = useState<Record<number, FleetRoute>>({});
+  const [fleetRoutes, setFleetRoutes] = useState<Record<number, FleetRoute>>({});  // keyed by routeId
   const [showRouteBuilder, setShowRouteBuilder] = useState(false);
   const [routeBuilderFleetId, setRouteBuilderFleetId] = useState<number | null>(null);
   const [routeBuilderSaving, setRouteBuilderSaving] = useState(false);
@@ -150,7 +151,7 @@ export default function AdminScreen() {
       const routes = Object.values(fleetRoutes);
       if (routes.length > 0) {
         mapRef.current?.setAllRoutes(
-          routes.map((r) => ({ fleetId: r.fleetId, coords: r.routeCoords, name: r.name }))
+          routes.map((r) => ({ routeId: r.id, fleetId: r.fleetId, coords: r.routeCoords, name: r.name }))
         );
       }
     }
@@ -161,19 +162,19 @@ export default function AdminScreen() {
     routeUpdates.forEach((r) => {
       setFleetRoutes((prev) => ({
         ...prev,
-        [r.fleetId]: { fleetId: r.fleetId, name: r.name, waypoints: [], routeCoords: r.routeCoords },
+        [r.routeId]: { id: r.routeId, fleetId: r.fleetId, name: r.name, waypoints: [], routeCoords: r.routeCoords },
       }));
-      mapRef.current?.setFleetRoute(r.fleetId, r.routeCoords, r.name);
+      mapRef.current?.setRoute(r.routeId, r.routeCoords, r.name);
     });
   }, [routeUpdates, mapReady]);
 
   useEffect(() => {
     if (!mapReady) return;
-    removedFleetIds.forEach((id) => {
+    removedRouteIds.forEach((id) => {
       setFleetRoutes((prev) => { const n = { ...prev }; delete n[id]; return n; });
-      mapRef.current?.removeFleetRoute(id);
+      mapRef.current?.removeRoute(id);
     });
-  }, [removedFleetIds, mapReady]);
+  }, [removedRouteIds, mapReady]);
 
   useEffect(() => {
     loadFleets();
@@ -197,9 +198,13 @@ export default function AdminScreen() {
             setFleetJeeps((prev) => ({ ...prev, [fleet.id]: jeepsData }));
           } catch {}
           try {
-            const routeData = await apiJson<FleetRoute>(`/routes/fleet/${fleet.id}`);
-            if (routeData?.waypoints?.length) {
-              setFleetRoutes((prev) => ({ ...prev, [fleet.id]: routeData }));
+            const routesData = await apiJson<FleetRoute[]>(`/routes/fleet/${fleet.id}`);
+            if (Array.isArray(routesData)) {
+              routesData.forEach((r) => {
+                if (r.waypoints?.length) {
+                  setFleetRoutes((prev) => ({ ...prev, [r.id]: r }));
+                }
+              });
             }
           } catch {}
         })
@@ -233,11 +238,11 @@ export default function AdminScreen() {
     setRouteBuilderSaving(true);
     try {
       const saved = await apiJson<FleetRoute>(`/routes/fleet/${routeBuilderFleetId}`, {
-        method: "PUT",
+        method: "POST",
         body: JSON.stringify({ name, waypoints, routeCoords }),
       });
-      setFleetRoutes((prev) => ({ ...prev, [routeBuilderFleetId]: saved }));
-      mapRef.current?.setFleetRoute(saved.fleetId, saved.routeCoords, saved.name);
+      setFleetRoutes((prev) => ({ ...prev, [saved.id]: saved }));
+      mapRef.current?.setRoute(saved.id, saved.routeCoords, saved.name);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowRouteBuilder(false);
       Alert.alert("Route saved!", "Drivers and commuters can now see this route.");

@@ -24,9 +24,13 @@ export interface MapWebViewRef {
   setCommuterLocations: (commuters: CommuterLocation[]) => void;
   updateCommuterLocation: (commuter: CommuterLocation) => void;
   removeCommuter: (commuterId: string) => void;
+  setRoute: (routeId: number, coords: RouteCoord[], name: string) => void;
+  removeRoute: (routeId: number) => void;
+  setAllRoutes: (routes: { routeId: number; coords: RouteCoord[]; name: string }[]) => void;
+  /** @deprecated use setRoute */
   setFleetRoute: (fleetId: number, coords: RouteCoord[], name: string) => void;
+  /** @deprecated use removeRoute */
   removeFleetRoute: (fleetId: number) => void;
-  setAllRoutes: (routes: { fleetId: number; coords: RouteCoord[]; name: string }[]) => void;
 }
 
 interface Props {
@@ -111,14 +115,24 @@ const MAP_HTML = `<!DOCTYPE html>
   var userMarker=null;
   var userCircle=null;
 
-  var storedRoutes={};
-  var activeFleets={};
-  var driverFleetMap={};
+  // Routes keyed by routeId (string). Each route is independent.
+  var storedRoutes={};    // routeId -> {coords, name}
+  var activeRoutes={};    // routeId -> {driverId: true, ...}
+  var driverRouteMap={};  // driverId -> routeId
 
   var routeLines={};
   var destMarkers={};
   var travelMarkers={};
   var travelAnims={};
+
+  // Palette for multi-route coloring
+  var ROUTE_COLORS=['#f97316','#3B82F6','#22c55e','#a855f7','#ef4444','#eab308','#06b6d4','#ec4899'];
+  var routeColorIdx={};
+  var nextColorIdx=0;
+  function getRouteColor(rid){
+    if(routeColorIdx[rid]==null){routeColorIdx[rid]=nextColorIdx%ROUTE_COLORS.length;nextColorIdx++;}
+    return ROUTE_COLORS[routeColorIdx[rid]];
+  }
 
   function jIcon(status){
     var c=status==='available'?'#F97316':status==='full'?'#EF4444':'#9CA3AF';
@@ -142,40 +156,37 @@ const MAP_HTML = `<!DOCTYPE html>
     });
   }
 
-  function showRoute(fid){
-    var r=storedRoutes[fid];
+  function showRoute(rid){
+    var r=storedRoutes[rid];
     if(!r||r.coords.length<2) return;
-    hideRoute(fid);
+    hideRoute(rid);
 
+    var color=getRouteColor(rid);
     var lls=r.coords.map(function(c){return[c.lat,c.lng];});
 
-    routeLines[fid]=L.polyline(lls,{
-      color:'#f97316',weight:5,opacity:0.78,lineJoin:'round',lineCap:'round'
+    routeLines[rid]=L.polyline(lls,{
+      color:color,weight:5,opacity:0.78,lineJoin:'round',lineCap:'round'
     }).addTo(map).bindPopup('<b>'+r.name+'</b>');
 
     var dest=r.coords[r.coords.length-1];
-    destMarkers[fid]=L.marker([dest.lat,dest.lng],{
-      icon:L.divIcon({
-        html:'<div class="dest-wrap"><div class="dest-dot"></div><div class="dest-ring"></div><div class="dest-ring2"></div></div>',
-        className:'',iconSize:[32,32],iconAnchor:[16,16]
-      }),
+    var destHtml='<div class="dest-wrap"><div class="dest-dot" style="background:'+color+';box-shadow:0 2px 8px rgba(0,0,0,.4);border-color:'+color+'"></div><div class="dest-ring" style="border-color:'+color+'"></div><div class="dest-ring2" style="border-color:'+color+'"></div></div>';
+    destMarkers[rid]=L.marker([dest.lat,dest.lng],{
+      icon:L.divIcon({html:destHtml,className:'',iconSize:[32,32],iconAnchor:[16,16]}),
       zIndexOffset:200
     }).addTo(map);
 
-    travelMarkers[fid]=L.marker([r.coords[0].lat,r.coords[0].lng],{
-      icon:L.divIcon({
-        html:'<div class="travel-dot"></div>',
-        className:'',iconSize:[13,13],iconAnchor:[6,6]
-      }),
+    var dotHtml='<div class="travel-dot" style="border-color:'+color+'"></div>';
+    travelMarkers[rid]=L.marker([r.coords[0].lat,r.coords[0].lng],{
+      icon:L.divIcon({html:dotHtml,className:'',iconSize:[13,13],iconAnchor:[6,6]}),
       zIndexOffset:300
     }).addTo(map);
 
     var anim={progress:0,id:null};
-    travelAnims[fid]=anim;
+    travelAnims[rid]=anim;
     var total=r.coords.length;
     var step=1/(8000/60);
     anim.id=setInterval(function(){
-      if(!travelMarkers[fid]){clearInterval(anim.id);return;}
+      if(!travelMarkers[rid]){clearInterval(anim.id);return;}
       anim.progress+=step;
       if(anim.progress>=1) anim.progress=0;
       var pos=anim.progress*(total-1);
@@ -183,44 +194,44 @@ const MAP_HTML = `<!DOCTYPE html>
       var frac=pos-idx;
       var p1=r.coords[idx];
       var p2=r.coords[Math.min(idx+1,total-1)];
-      travelMarkers[fid].setLatLng([p1.lat+(p2.lat-p1.lat)*frac, p1.lng+(p2.lng-p1.lng)*frac]);
+      travelMarkers[rid].setLatLng([p1.lat+(p2.lat-p1.lat)*frac, p1.lng+(p2.lng-p1.lng)*frac]);
     },60);
   }
 
-  function hideRoute(fid){
-    if(routeLines[fid]){map.removeLayer(routeLines[fid]);delete routeLines[fid];}
-    if(destMarkers[fid]){map.removeLayer(destMarkers[fid]);delete destMarkers[fid];}
-    if(travelMarkers[fid]){map.removeLayer(travelMarkers[fid]);delete travelMarkers[fid];}
-    if(travelAnims[fid]){clearInterval(travelAnims[fid].id);delete travelAnims[fid];}
+  function hideRoute(rid){
+    if(routeLines[rid]){map.removeLayer(routeLines[rid]);delete routeLines[rid];}
+    if(destMarkers[rid]){map.removeLayer(destMarkers[rid]);delete destMarkers[rid];}
+    if(travelMarkers[rid]){map.removeLayer(travelMarkers[rid]);delete travelMarkers[rid];}
+    if(travelAnims[rid]){clearInterval(travelAnims[rid].id);delete travelAnims[rid];}
   }
 
-  function checkFleetVisibility(fid){
-    var hasActive=activeFleets[fid]&&Object.keys(activeFleets[fid]).length>0;
+  function checkRouteVisibility(rid){
+    var hasActive=activeRoutes[rid]&&Object.keys(activeRoutes[rid]).length>0;
     if(hasActive){
-      if(!routeLines[fid]&&storedRoutes[fid]) showRoute(fid);
+      if(!routeLines[rid]&&storedRoutes[rid]) showRoute(rid);
     } else {
-      hideRoute(fid);
+      hideRoute(rid);
     }
   }
 
   function updateDriver(d){
     var did=String(d.driverId);
-    var fid=d.fleetId!=null?String(d.fleetId):null;
+    var rid=d.routeId!=null?String(d.routeId):null;
 
-    if(fid){
-      var prevFid=driverFleetMap[did];
-      if(prevFid&&prevFid!==fid){
-        if(activeFleets[prevFid]) delete activeFleets[prevFid][did];
-        checkFleetVisibility(prevFid);
+    if(rid){
+      var prevRid=driverRouteMap[did];
+      if(prevRid&&prevRid!==rid){
+        if(activeRoutes[prevRid]) delete activeRoutes[prevRid][did];
+        checkRouteVisibility(prevRid);
       }
-      driverFleetMap[did]=fid;
-      if(!activeFleets[fid]) activeFleets[fid]={};
+      driverRouteMap[did]=rid;
+      if(!activeRoutes[rid]) activeRoutes[rid]={};
       if(d.status!=='offline'){
-        activeFleets[fid][did]=true;
+        activeRoutes[rid][did]=true;
       } else {
-        delete activeFleets[fid][did];
+        delete activeRoutes[rid][did];
       }
-      checkFleetVisibility(fid);
+      checkRouteVisibility(rid);
     }
 
     if(d.status==='offline'){
@@ -240,11 +251,11 @@ const MAP_HTML = `<!DOCTYPE html>
 
   function removeDriver(id){
     var did=String(id);
-    var fid=driverFleetMap[did];
-    if(fid){
-      delete driverFleetMap[did];
-      if(activeFleets[fid]) delete activeFleets[fid][did];
-      checkFleetVisibility(fid);
+    var rid=driverRouteMap[did];
+    if(rid){
+      delete driverRouteMap[did];
+      if(activeRoutes[rid]) delete activeRoutes[rid][did];
+      checkRouteVisibility(rid);
     }
     if(markers[did]){map.removeLayer(markers[did]);delete markers[did];}
   }
@@ -271,17 +282,18 @@ const MAP_HTML = `<!DOCTYPE html>
     if(pan) map.setView([lat,lng],16);
   }
 
-  function setFleetRoute(fleetId,coords,name){
-    var fid=String(fleetId);
-    storedRoutes[fid]={coords:coords,name:name};
-    checkFleetVisibility(fid);
+  function setRoute(routeId,coords,name){
+    var rid=String(routeId);
+    storedRoutes[rid]={coords:coords,name:name};
+    checkRouteVisibility(rid);
   }
 
-  function removeFleetRoute(fleetId){
-    var fid=String(fleetId);
-    delete storedRoutes[fid];
-    delete activeFleets[fid];
-    hideRoute(fid);
+  function removeRoute(routeId){
+    var rid=String(routeId);
+    delete storedRoutes[rid];
+    hideRoute(rid);
+    // Clear any active driver associations for this route
+    if(activeRoutes[rid]) delete activeRoutes[rid];
   }
 
   function handleMsg(e){
@@ -290,9 +302,9 @@ const MAP_HTML = `<!DOCTYPE html>
       if(msg.type==='UPDATE_DRIVER') updateDriver(msg.data);
       else if(msg.type==='REMOVE_DRIVER') removeDriver(msg.driverId);
       else if(msg.type==='SET_DRIVERS'){
-        Object.keys(activeFleets).forEach(function(fid){ activeFleets[fid]={}; });
+        Object.keys(activeRoutes).forEach(function(rid){ activeRoutes[rid]={}; });
         msg.drivers.forEach(updateDriver);
-        Object.keys(storedRoutes).forEach(function(fid){ checkFleetVisibility(fid); });
+        Object.keys(storedRoutes).forEach(function(rid){ checkRouteVisibility(rid); });
       }
       else if(msg.type==='USER_LOCATION') setUserLoc(msg.lat,msg.lng,msg.panTo);
       else if(msg.type==='PAN_TO') map.setView([msg.lat,msg.lng],msg.zoom||15);
@@ -304,12 +316,12 @@ const MAP_HTML = `<!DOCTYPE html>
       }
       else if(msg.type==='UPDATE_COMMUTER') updateCommuter(msg.data);
       else if(msg.type==='REMOVE_COMMUTER') removeCommuter(msg.commuterId);
-      else if(msg.type==='SET_FLEET_ROUTE') setFleetRoute(msg.fleetId,msg.coords,msg.name);
-      else if(msg.type==='REMOVE_FLEET_ROUTE') removeFleetRoute(msg.fleetId);
+      else if(msg.type==='SET_ROUTE') setRoute(msg.routeId,msg.coords,msg.name);
+      else if(msg.type==='REMOVE_ROUTE') removeRoute(msg.routeId);
       else if(msg.type==='SET_ALL_ROUTES'){
-        Object.keys(storedRoutes).forEach(function(fid){ hideRoute(fid); });
+        Object.keys(storedRoutes).forEach(function(rid){ hideRoute(rid); });
         storedRoutes={};
-        msg.routes.forEach(function(r){ setFleetRoute(r.fleetId,r.coords,r.name); });
+        msg.routes.forEach(function(r){ setRoute(r.routeId,r.coords,r.name); });
       }
     }catch(err){}
   }
@@ -351,8 +363,6 @@ const MapWebView = forwardRef<MapWebViewRef, Props>(({ style, onMapReady }, ref)
     if (Platform.OS === "web") {
       iframeRef.current?.contentWindow?.postMessage(JSON.stringify(msg), "*");
     } else {
-      // handleMsg lives inside the IIFE so it's not global.
-      // Dispatch a real MessageEvent so window.addEventListener('message') catches it.
       const json = JSON.stringify(msg);
       const escaped = JSON.stringify(json);
       webViewRef.current?.injectJavaScript(
@@ -386,14 +396,20 @@ const MapWebView = forwardRef<MapWebViewRef, Props>(({ style, onMapReady }, ref)
     removeCommuter(commuterId: string) {
       sendMsg({ type: "REMOVE_COMMUTER", commuterId });
     },
+    setRoute(routeId: number, coords: RouteCoord[], name: string) {
+      sendMsg({ type: "SET_ROUTE", routeId, coords, name });
+    },
+    removeRoute(routeId: number) {
+      sendMsg({ type: "REMOVE_ROUTE", routeId });
+    },
+    setAllRoutes(routes: { routeId: number; coords: RouteCoord[]; name: string }[]) {
+      sendMsg({ type: "SET_ALL_ROUTES", routes });
+    },
     setFleetRoute(fleetId: number, coords: RouteCoord[], name: string) {
-      sendMsg({ type: "SET_FLEET_ROUTE", fleetId, coords, name });
+      sendMsg({ type: "SET_ROUTE", routeId: fleetId, coords, name });
     },
     removeFleetRoute(fleetId: number) {
-      sendMsg({ type: "REMOVE_FLEET_ROUTE", fleetId });
-    },
-    setAllRoutes(routes: { fleetId: number; coords: RouteCoord[]; name: string }[]) {
-      sendMsg({ type: "SET_ALL_ROUTES", routes });
+      sendMsg({ type: "REMOVE_ROUTE", routeId: fleetId });
     },
   }));
 
