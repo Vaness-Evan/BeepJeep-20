@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import {
   View, Text, TouchableOpacity, StyleSheet, ScrollView,
   Platform, TextInput, ActivityIndicator, Modal, Alert, Animated,
@@ -138,9 +138,16 @@ export default function AdminScreen() {
   const topPad = Platform.OS === "web" ? 0 : insets.top;
   const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
 
-  const fleetOnlyDrivers = fleetDriverIds.size > 0
-    ? drivers.filter((d) => fleetDriverIds.has(parseInt(d.driverId)))
-    : [];
+  // Build a set of this admin's fleet IDs so we can filter drivers by fleetId
+  // (the driver socket broadcast already includes fleetId — no jeep-assignment lookup needed)
+  const adminFleetIdSet = useMemo(
+    () => new Set(fleets.map((f) => f.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fleets.map((f) => f.id).join(",")]
+  );
+  const fleetOnlyDrivers = drivers.filter(
+    (d) => d.fleetId != null && adminFleetIdSet.has(d.fleetId)
+  );
 
   useEffect(() => {
     if (mapReady) mapRef.current?.setDrivers(fleetOnlyDrivers);
