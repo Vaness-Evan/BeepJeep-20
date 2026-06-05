@@ -211,6 +211,7 @@ export default function DriverScreen() {
         totalFare: fareTotal,
         lastUpdated: Date.now(),
         fleetName: fleetName || undefined,
+        fleetId: user?.fleetId ?? null,
       });
     },
     [socket, user, fleetName],

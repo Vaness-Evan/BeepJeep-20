@@ -20,6 +20,7 @@ export interface DriverData {
   totalFare: number;
   lastUpdated: number;
   fleetName?: string;
+  fleetId?: number | null;
 }
 
 export interface FareRecord {

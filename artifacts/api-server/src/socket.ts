@@ -13,6 +13,7 @@ interface DriverData {
   totalFare: number;
   lastUpdated: number;
   fleetName?: string;
+  fleetId?: number | null;
 }
 
 interface CommuterLocation {
