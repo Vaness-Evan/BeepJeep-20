@@ -74,7 +74,14 @@ interface Driver {
 }
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, { credentials: "include", ...options });
+  const token = localStorage.getItem("bj_token");
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options?.headers ?? {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as any).error ?? `Request failed: ${res.status}`);
